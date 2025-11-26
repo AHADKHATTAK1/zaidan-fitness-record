@@ -1,0 +1,14 @@
+Name: zaidan-fitness-record
+Runtime: Python 3
+Build Command: pip install -r requirements.txt
+Start Command: gunicorn app:app
+Instance Type: Free
+
+SECRET_KEY = (generate one below)
+ADMIN_PASSWORD = admin123
+SMTP_HOST = smtp.gmail.com
+SMTP_PORT = 587
+SMTP_USER = zaidanfitnessgym@gmail.com
+SMTP_PASSWORD = (your Gmail App Password)
+BACKUP_TO_EMAIL = True
+WHATSAPP_DEFAULT_COUNTRY_CODE = 92
