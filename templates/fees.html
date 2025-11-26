@@ -4,6 +4,8 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#00C46C" />
+    <link rel="icon" type="image/png" href="{{ logo_url or '/static/favicon.png' }}" />
+    <link rel="apple-touch-icon" href="{{ logo_url or '/static/favicon.png' }}" />
     <link rel="manifest" href="/manifest.json" />
     <title>Fees - {{ gym_name }}</title>
     <script>
@@ -43,8 +45,9 @@
           {% if logo_url %}
           <img
             src="{{ logo_url }}"
-            alt="Logo"
-            style="height: 28px; width: auto; border-radius: 4px"
+            alt="{{ gym_name }} Logo"
+            title="{{ gym_name }}"
+            class="navbar-logo"
           />
           {% endif %}
           <span class="brand">{{ gym_name }}</span>

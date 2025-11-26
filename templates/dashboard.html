@@ -10,6 +10,8 @@
       name="apple-mobile-web-app-status-bar-style"
       content="black-translucent"
     />
+    <link rel="icon" type="image/png" href="{{ logo_url or '/static/favicon.png' }}" />
+    <link rel="apple-touch-icon" href="{{ logo_url or '/static/favicon.png' }}" />
     <link rel="manifest" href="/manifest.json" />
     <title>Dashboard - {{ gym_name }}</title>
     <script>
@@ -41,8 +43,9 @@
           {% if logo_url %}
           <img
             src="{{ logo_url }}"
-            alt="Logo"
-            style="height: 28px; width: auto; border-radius: 4px"
+            alt="{{ gym_name }} Logo"
+            title="{{ gym_name }}"
+            class="navbar-logo"
           />
           {% endif %}
           <span class="brand">{{ gym_name }}</span>
@@ -175,18 +178,21 @@
           <div class="d-flex justify-content-between align-items-center">
             <h5 class="card-title mb-0">This Year Overview</h5>
             <div class="d-flex align-items-center gap-2">
-              <label class="form-label mb-0 small">Year</label>
+              <label class="form-label mb-0 small" for="statYear">Year</label>
               <input
                 id="statYear"
                 class="form-control form-control-sm"
                 type="number"
-                style="width: 100px"
+                aria-label="Statistics year"
+                title="Select year for statistics"
               />
               <button
                 class="btn btn-sm btn-outline-primary"
                 onclick="loadStats()"
+                aria-label="Refresh statistics"
+                title="Refresh statistics"
               >
-                Refresh
+                <i class="bi bi-arrow-clockwise"></i> Refresh
               </button>
             </div>
           </div>
@@ -322,8 +328,8 @@
                 <div class="mb-2">
                   <img
                     src="{{ logo_url or '' }}"
-                    alt="Logo"
-                    style="height: 48px"
+                    alt="{{ gym_name }} Logo"
+                    class="settings-logo"
                     onerror="this.style.display='none'"
                   />
                 </div>
@@ -793,8 +799,7 @@
     <!-- Toast container -->
     <div
       id="toastArea"
-      class="toast-container position-fixed bottom-0 end-0 p-3"
-      style="z-index: 1080"
+      class="toast-container position-fixed bottom-0 end-0 p-3 toast-area"
     ></div>
     <script>
       function showToast(message, type) {

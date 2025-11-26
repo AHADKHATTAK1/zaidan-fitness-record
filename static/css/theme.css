@@ -46,7 +46,34 @@ body {
   transition: background 0.3s ease;
 }
 
-/* ----------------- Brand Title ----------------- */
+/* ----------------- Logo & Brand ----------------- */
+.navbar-logo {
+  height: 28px;
+  width: auto;
+  border-radius: 4px;
+  object-fit: contain;
+}
+
+.settings-logo {
+  height: 48px;
+  width: auto;
+  border-radius: 4px;
+  object-fit: contain;
+}
+
+.toast-area {
+  z-index: 1080;
+}
+
+.camera-preview {
+  max-height: 140px;
+  border-radius: 4px;
+}
+
+.edit-camera-preview {
+  max-height: 240px;
+}
+
 .brand {
   font-weight: 900;
   font-size: 2.2rem;

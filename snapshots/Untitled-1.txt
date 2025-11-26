@@ -1,0 +1,7 @@
+POST /admin/system/reset
+Content-Type: application/json
+Authorization: Admin login required
+
+{
+  "confirm": "RESET"
+}

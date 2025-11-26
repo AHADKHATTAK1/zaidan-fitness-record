@@ -4,6 +4,8 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#00C46C" />
+    <link rel="icon" type="image/png" href="{{ logo_url or '/static/favicon.png' }}" />
+    <link rel="apple-touch-icon" href="{{ logo_url or '/static/favicon.png' }}" />
     <link rel="manifest" href="/manifest.json" />
     <title>Members - {{ gym_name }}</title>
     <script>
@@ -33,7 +35,7 @@
       <nav class="navbar navbar-expand border rounded px-3 mb-3">
         <a class="navbar-brand d-flex align-items-center gap-2" href="/dashboard">
           {% if logo_url %}
-          <img src="{{ logo_url }}" alt="Logo" style="height:28px; width:auto; border-radius:4px" />
+          <img src="{{ logo_url }}" alt="{{ gym_name }} Logo" title="{{ gym_name }}" class="navbar-logo" />
           {% endif %}
           <span class="brand">{{ gym_name }}</span>
         </a>
@@ -48,8 +50,10 @@
           <button
             class="btn btn-outline-primary w-100"
             onclick="fetchMembers()"
+            aria-label="Search members"
+            title="Search members"
           >
-            Search
+            <i class="bi bi-search"></i> Search
           </button>
         </div>
         <div class="col-md-6 text-end">
@@ -63,6 +67,9 @@
               type="file"
               id="csvfile"
               name="file"
+              aria-label="CSV file to import"
+              title="Select CSV file"
+              accept=".csv"
             />
             <button class="btn btn-sm btn-outline-secondary" type="submit">
               <i class="bi bi-upload"></i> Import CSV
@@ -130,6 +137,8 @@
               type="button"
               id="btnAddStartCam"
               onclick="startAddCamera()"
+              aria-label="Start camera"
+              title="Start camera for photo"
             >
               <i class="bi bi-camera-video"></i>
             </button>
@@ -138,7 +147,7 @@
         </div>
         <div class="row g-2 mt-1 align-items-end">
           <div class="col-md-3">
-            <select class="form-select" id="training_type">
+            <select class="form-select" id="training_type" aria-label="Training type" title="Select training type">
               <option value="standard">Gym</option>
               <option value="personal">Personal Training</option>
               <option value="cardio">Cardio</option>
@@ -156,15 +165,13 @@
               <div class="d-flex align-items-center gap-2">
                 <video
                   id="addCamStream"
-                  class="d-none"
+                  class="d-none camera-preview"
                   autoplay
                   playsinline
-                  style="max-height: 140px"
                 ></video>
                 <canvas
                   id="addCamCanvas"
-                  class="d-none"
-                  style="max-height: 140px"
+                  class="d-none camera-preview"
                 ></canvas>
                 <div class="ms-auto d-flex gap-2">
                   <button
@@ -189,7 +196,7 @@
             </div>
           </div>
         </div>
-        <div class="row g-2 mt-1" id="customTrainingRow" style="display: none">
+        <div class="row g-2 mt-1 d-none" id="customTrainingRow">
           <div class="col-md-3">
             <input
               class="form-control"
@@ -202,17 +209,17 @@
 
       <h3 class="d-flex align-items-center justify-content-between">
         <span>Members</span>
-        <div class="btn-group btn-group-sm" role="group">
-          <button type="button" id="toggleViewCards" class="btn btn-outline-secondary active" onclick="setMemberView('cards')"><i class="bi bi-grid"></i></button>
-          <button type="button" id="toggleViewTable" class="btn btn-outline-secondary" onclick="setMemberView('table')"><i class="bi bi-list"></i></button>
+        <div class="btn-group btn-group-sm" role="group" aria-label="View toggle">
+          <button type="button" id="toggleViewCards" class="btn btn-outline-secondary active" onclick="setMemberView('cards')" aria-label="Card view" title="Card view"><i class="bi bi-grid"></i></button>
+          <button type="button" id="toggleViewTable" class="btn btn-outline-secondary" onclick="setMemberView('table')" aria-label="Table view" title="Table view"><i class="bi bi-list"></i></button>
         </div>
       </h3>
       <div class="row g-2 mb-3" id="memberFilters">
         <div class="col-md-4">
-          <input id="search" class="form-control" placeholder="Search by name, phone or #serial" />
+          <input id="search" class="form-control" placeholder="Search by name, phone or #serial" aria-label="Search members" title="Search members" />
         </div>
         <div class="col-md-2">
-          <select id="filterStatus" class="form-select" onchange="debouncedFetchMembers()">
+          <select id="filterStatus" class="form-select" onchange="debouncedFetchMembers()" aria-label="Filter by status" title="Filter by status">
             <option value="">All Status</option>
             <option value="Paid">Paid</option>
             <option value="Unpaid">Unpaid</option>
@@ -220,7 +227,7 @@
           </select>
         </div>
         <div class="col-md-2">
-          <select id="filterTraining" class="form-select" onchange="debouncedFetchMembers()">
+          <select id="filterTraining" class="form-select" onchange="debouncedFetchMembers()" aria-label="Filter by training type" title="Filter by training type">
             <option value="">All Training</option>
             <option value="standard">Standard</option>
             <option value="personal">Personal</option>
@@ -229,7 +236,7 @@
           </select>
         </div>
         <div class="col-md-2">
-          <select id="filterSpecial" class="form-select" onchange="debouncedFetchMembers()">
+          <select id="filterSpecial" class="form-select" onchange="debouncedFetchMembers()" aria-label="Filter by special tag" title="Filter by special tag">
             <option value="">Any Tag</option>
             <option value="1">Special ⭐</option>
             <option value="0">Not Special</option>
@@ -321,7 +328,7 @@
                     <option value="other">Other (Custom)</option>
                   </select>
                 </div>
-                <div id="edit_custom_training_wrap" style="display: none">
+                <div id="edit_custom_training_wrap" class="d-none">
                   <label class="form-label">Custom Training</label>
                   <input
                     class="form-control"
@@ -356,8 +363,7 @@
                       id="camStream"
                       autoplay
                       playsinline
-                      class="w-100 rounded border d-none"
-                      style="max-height: 240px"
+                      class="w-100 rounded border d-none edit-camera-preview"
                     ></video>
                     <canvas id="camCanvas" class="d-none"></canvas>
                     <div class="d-flex gap-2">
@@ -425,6 +431,9 @@
                     data-bs-toggle="tab"
                     data-bs-target="#tab-payments"
                     type="button"
+                    role="tab"
+                    aria-controls="tab-payments"
+                    aria-selected="true"
                   >
                     Payments
                   </button>
@@ -435,6 +444,9 @@
                     data-bs-toggle="tab"
                     data-bs-target="#tab-transactions"
                     type="button"
+                    role="tab"
+                    aria-controls="tab-transactions"
+                    aria-selected="false"
                   >
                     Transactions
                   </button>
