@@ -1,18 +1,55 @@
 {
-  "name": "Gym Management System",
-  "short_name": "Gym POS",
-  "description": "Premium Gym Management & POS System",
+  "name": "ZAIDAN FITNESS - Gym Management",
+  "short_name": "ZAIDAN GYM",
+  "description": "Complete Gym Management System - Members, Fees, Payments",
   "start_url": "/dashboard",
+  "scope": "/",
   "display": "standalone",
-  "background_color": "#F4F7FA",
+  "background_color": "#000000",
   "theme_color": "#00C46C",
-  "orientation": "portrait-primary",
+  "orientation": "portrait",
   "icons": [
+    {
+      "src": "/static/icon-72.png",
+      "sizes": "72x72",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/static/icon-96.png",
+      "sizes": "96x96",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/static/icon-128.png",
+      "sizes": "128x128",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/static/icon-144.png",
+      "sizes": "144x144",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/static/icon-152.png",
+      "sizes": "152x152",
+      "type": "image/png",
+      "purpose": "any"
+    },
     {
       "src": "/static/icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any maskable"
+    },
+    {
+      "src": "/static/icon-384.png",
+      "sizes": "384x384",
+      "type": "image/png",
+      "purpose": "any"
     },
     {
       "src": "/static/icon-512.png",
@@ -21,6 +58,43 @@
       "purpose": "any maskable"
     }
   ],
-  "categories": ["business", "productivity", "finance"],
-  "prefer_related_applications": false
+  "screenshots": [
+    {
+      "src": "/static/screenshot-mobile.png",
+      "sizes": "540x720",
+      "type": "image/png",
+      "form_factor": "narrow"
+    }
+  ],
+  "categories": ["business", "productivity", "finance", "lifestyle"],
+  "shortcuts": [
+    {
+      "name": "Dashboard",
+      "short_name": "Dashboard",
+      "description": "View gym statistics",
+      "url": "/dashboard",
+      "icons": [{ "src": "/static/icon-96.png", "sizes": "96x96" }]
+    },
+    {
+      "name": "Members",
+      "short_name": "Members",
+      "description": "Manage members",
+      "url": "/members",
+      "icons": [{ "src": "/static/icon-96.png", "sizes": "96x96" }]
+    },
+    {
+      "name": "Fees",
+      "short_name": "Fees",
+      "description": "Track monthly fees",
+      "url": "/fees",
+      "icons": [{ "src": "/static/icon-96.png", "sizes": "96x96" }]
+    }
+  ],
+  "prefer_related_applications": false,
+  "related_applications": [],
+  "share_target": {
+    "action": "/members",
+    "method": "GET",
+    "enctype": "application/x-www-form-urlencoded"
+  }
 }

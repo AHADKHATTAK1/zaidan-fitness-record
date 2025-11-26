@@ -425,6 +425,103 @@ body {
   background: var(--light-grey);
 }
 
+/* ----------------- Mobile Optimizations (PWA) ----------------- */
+@media (max-width: 768px) {
+  /* Larger touch targets */
+  .btn {
+    min-height: 44px;
+    padding: 12px 20px;
+  }
+  
+  /* Better spacing on mobile */
+  .container {
+    padding: 12px;
+  }
+  
+  /* Responsive cards */
+  .card, .kpi-card, .member-card {
+    padding: 16px;
+    margin-bottom: 16px;
+  }
+  
+  /* Mobile-friendly navbar */
+  .navbar {
+    padding: 8px 12px;
+  }
+  
+  .navbar-brand {
+    font-size: 1rem !important;
+  }
+  
+  /* Stack buttons vertically */
+  .btn-group {
+    flex-direction: column;
+    width: 100%;
+  }
+  
+  .btn-group .btn {
+    width: 100%;
+    margin-bottom: 8px;
+  }
+  
+  /* Responsive tables */
+  .table-responsive {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  
+  /* Form inputs */
+  .form-control, .form-select {
+    font-size: 16px; /* Prevents iOS zoom */
+  }
+  
+  /* Modal full screen on mobile */
+  .modal-dialog {
+    margin: 0;
+    max-width: 100%;
+  }
+  
+  .modal-content {
+    border-radius: 0;
+    min-height: 100vh;
+  }
+}
+
+/* iOS Safe Area Support */
+@supports (padding: max(0px)) {
+  body {
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+}
+
+/* PWA Display Mode */
+@media all and (display-mode: standalone) {
+  /* App is installed as PWA */
+  body {
+    user-select: none; /* Prevent text selection for app feel */
+    -webkit-touch-callout: none;
+  }
+  
+  /* Hide browser-specific elements */
+  .pwa-hide {
+    display: none !important;
+  }
+}
+
+/* Landscape mode optimizations */
+@media (orientation: landscape) and (max-height: 500px) {
+  .navbar {
+    padding: 4px 12px;
+  }
+  
+  .card {
+    padding: 12px;
+  }
+}
+
 /* ----------------- Member Records / Cards Visibility ----------------- */
 /* Member name and ID - Extra Bold */
 .member-name,
