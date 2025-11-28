@@ -71,11 +71,17 @@
               title="Select Excel (.xlsx, .xls, .xltm) or CSV file"
               accept=".csv,.xlsx,.xls,.xltm"
             />
-            <button class="btn btn-sm btn-outline-secondary" type="submit">
-              <i class="bi bi-upload"></i> Import Excel/CSV
+            <button class="btn btn-sm btn-outline-secondary" type="submit" title="AI-powered auto-detection enabled">
+              <i class="bi bi-robot"></i> <i class="bi bi-upload"></i> Import Excel/CSV
             </button>
           </form>
         </div>
+      </div>
+      
+      <!-- AI Import Info Banner -->
+      <div class="alert alert-success alert-dismissible fade show small mb-3" role="alert">
+        <strong><i class="bi bi-robot"></i> Smart AI Import:</strong> Upload your Excel/CSV file with any column names - our AI automatically detects and maps fields (name, phone, email, admission date, etc.) in multiple languages!
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
       </div>
 
       <div class="d-flex align-items-center justify-content-between">
@@ -214,6 +220,11 @@
           <button type="button" id="toggleViewTable" class="btn btn-outline-secondary" onclick="setMemberView('table')" aria-label="Table view" title="Table view"><i class="bi bi-list"></i></button>
         </div>
       </h3>
+      <div id="memberSummary" class="mb-2 small d-flex flex-wrap gap-2 align-items-center">
+        <span class="badge bg-secondary">Total: <span id="countTotal">0</span></span>
+        <span class="badge bg-success">Active: <span id="countActive">0</span></span>
+        <span class="badge bg-secondary">Inactive: <span id="countInactive">0</span></span>
+      </div>
       <div class="row g-2 mb-3" id="memberFilters">
         <div class="col-md-4">
           <input id="search" class="form-control" placeholder="Search by name, phone or #serial" aria-label="Search members" title="Search members" />
@@ -224,6 +235,13 @@
             <option value="Paid">Paid</option>
             <option value="Unpaid">Unpaid</option>
             <option value="N/A">N/A</option>
+          </select>
+        </div>
+        <div class="col-md-2">
+          <select id="filterActive" class="form-select" onchange="debouncedFetchMembers()" aria-label="Filter by active status" title="Filter by active status">
+            <option value="">All Members</option>
+            <option value="1">Active</option>
+            <option value="0">Inactive</option>
           </select>
         </div>
         <div class="col-md-2">
@@ -245,6 +263,9 @@
         <div class="col-md-2 d-flex gap-2">
           <button class="btn btn-outline-primary w-100" type="button" onclick="debouncedFetchMembers()"><i class="bi bi-search"></i> Apply</button>
         </div>
+        <div class="col-md-2 d-flex gap-2">
+          <button class="btn btn-outline-success w-100" type="button" onclick="connectAll()"><i class="bi bi-link-45deg"></i> Connect All</button>
+        </div>
       </div>
       <div id="members">
         <div class="text-center py-4">
@@ -255,7 +276,35 @@
         </div>
       </div>
       <hr />
-      <h4>Data File Upload (CSV / Excel)</h4>
+      <h4>
+        Data File Upload (CSV / Excel)
+        <i class="bi bi-robot text-primary" title="AI-powered auto-detection enabled"></i>
+      </h4>
+      <div class="alert alert-info small mb-3">
+        <div class="d-flex align-items-start gap-2">
+          <i class="bi bi-lightbulb-fill fs-5"></i>
+          <div>
+            <strong>Smart AI Auto-Detection Enabled</strong>
+            <p class="mb-2">Our system automatically detects and maps your Excel/CSV columns to the correct database fields.
+            Supports multiple languages (English, Urdu) and variations of column names.
+            Just upload your file - no manual mapping needed! 🚀</p>
+            <details class="small">
+              <summary class="cursor-pointer text-primary"><strong>Supported column patterns</strong> (click to expand)</summary>
+              <ul class="mt-2 mb-0">
+                <li><strong>Name:</strong> name, member name, full name, naam, نام</li>
+                <li><strong>Phone:</strong> phone, mobile, contact, whatsapp, رابطہ</li>
+                <li><strong>Email:</strong> email, e-mail, mail, ای میل</li>
+                <li><strong>Admission Date:</strong> admission, join date, date, داخلہ</li>
+                <li><strong>Status:</strong> status, active, is_active, member status, حالت</li>
+                <li><strong>Plan:</strong> plan, subscription, package, پلان</li>
+                <li><strong>Access Tier:</strong> access, tier, level, رسائی</li>
+                <li><strong>Training:</strong> training, workout, تربیت</li>
+                <li><strong>Special Tag:</strong> special, vip, star, خاص</li>
+              </ul>
+            </details>
+          </div>
+        </div>
+      </div>
       <form
         id="dataUploadForm"
         class="d-flex gap-2 align-items-center mb-3"
@@ -582,12 +631,30 @@
         clearTimeout(fetchMembersTimer);
         fetchMembersTimer = setTimeout(fetchMembers, 300);
       }
+      function connectAll(){
+        try {
+          // reset filters to show all members
+          const ids = ['filterStatus','filterActive','filterTraining','filterSpecial','search'];
+          ids.forEach(id => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            if (id === 'search') { el.value = ''; }
+            else { el.value = ''; }
+          });
+          debouncedFetchMembers();
+        } catch(e){ console.warn('Connect All failed to reset filters', e); }
+      }
       function applyClientFilters(data){
         const status = document.getElementById('filterStatus')?.value || '';
+        const active = document.getElementById('filterActive')?.value || '';
         const training = document.getElementById('filterTraining')?.value || '';
         const special = document.getElementById('filterSpecial')?.value || '';
         return data.filter(m => {
           if (status && m.current_fee_status !== status) return false;
+          if (active !== ''){
+            const isActive = m.is_active === true || m.is_active === 1;
+            if ((active === '1' && !isActive) || (active === '0' && isActive)) return false;
+          }
           if (training){
             if (training === 'other' && !(m.custom_training && m.custom_training.trim())) return false;
             else if (training !== 'other' && (m.training_type !== training)) return false;
@@ -612,6 +679,16 @@
           }
           let data = await res.json();
           sessionStorage.setItem('membersCache', JSON.stringify(data));
+          // counters before filter
+          const total = data.length;
+          const activeCount = data.filter(m => m.is_active === true || m.is_active === 1).length;
+          const inactiveCount = total - activeCount;
+          const ct = document.getElementById('countTotal');
+          const ca = document.getElementById('countActive');
+          const ci = document.getElementById('countInactive');
+          if (ct) ct.textContent = total;
+          if (ca) ca.textContent = activeCount;
+          if (ci) ci.textContent = inactiveCount;
           data = applyClientFilters(data);
           const el = document.getElementById("members");
           el.innerHTML = "";
@@ -648,6 +725,13 @@
                 <div class="text-muted small">Admission: ${
                   m.admission_date
                 }</div>
+                <div class="mt-1">
+                  ${
+                    (m.is_active === true)
+                      ? '<span class="badge bg-success">Active</span>'
+                      : '<span class="badge bg-secondary">Inactive</span>'
+                  }
+                </div>
                 <div class="text-muted small">Fee: ${
                   m.current_fee_status === "Paid"
                     ? m.current_fee_amount != null
@@ -698,17 +782,12 @@
                       m.plan_type === "yearly" ? "selected" : ""
                     }>Yearly</option>
                   </select>
-                  <a href="#" onclick="viewPayments(${m.id})" class="btn btn-sm btn-outline-primary"><i class="bi bi-table"></i> Payments</a>
                   <button onclick="viewDetails(${m.id})" class="btn btn-sm btn-outline-secondary"><i class="bi bi-card-text"></i> Details</button>
                   <button onclick="openEdit(${m.id})" class="btn btn-sm btn-outline-secondary"><i class="bi bi-pencil"></i> Edit</button>
-                  <a href="/api/members/${m.id}/export" class="btn btn-sm btn-outline-success"><i class="bi bi-filetype-xlsx"></i> Export</a>
                   <button onclick="remind(${m.id})" class="btn btn-sm btn-outline-success"><i class="bi bi-whatsapp"></i> Remind</button>
                   <button onclick="messageMember(${m.id})" class="btn btn-sm btn-outline-success"><i class="bi bi-chat-dots"></i> Message</button>
                   <button onclick="payMonth(${m.id})" class="btn btn-sm btn-outline-primary"><i class="bi bi-cash-coin"></i> Pay (This Month)</button>
-                  <button onclick="payYear(${m.id})" class="btn btn-sm btn-outline-warning"><i class="bi bi-calendar-check"></i> Pay (Year)</button>
                   <a href="/api/members/${m.id}/card" class="btn btn-sm btn-outline-danger"><i class="bi bi-filetype-pdf"></i> Card PDF</a>
-                  <button onclick="sendCard(${m.id})" class="btn btn-sm btn-outline-info"><i class="bi bi-send"></i> Send Card</button>
-                  <button data-referral="${(m.referral_code||'').replace(/'/g, "\\'")}" onclick="copyReferral(${m.id}, this.dataset.referral)" class="btn btn-sm btn-outline-secondary"><i class="bi bi-link-45deg"></i> Referral Link</button>
                   <label class="btn btn-sm btn-outline-secondary mb-0">
                     <i class="bi bi-image"></i> Upload Photo
                     <input type="file" accept="image/*" class="d-none" onchange="handlePhoto(${m.id}, this.files[0])" />
@@ -866,6 +945,24 @@
           window.__capturedAddBlob = null;
           stopAddCamera();
           fetchMembers();
+          
+          // Show current month fee status after admission
+          if (res.ok && m.id) {
+            const now = new Date();
+            const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+            const currentMonth = monthNames[now.getMonth()];
+            const currentYear = now.getFullYear();
+            const feeStatus = markPaid ? 'Paid' : 'Unpaid';
+            const feeAmount = amt || parseFloat(document.getElementById('monthly_fee')?.value) || '{{ monthly_price }}';
+            
+            const msg = `✅ Member Added Successfully!\n\n` +
+              `Name: ${m.name || payload.name}\n` +
+              `Admission Date: ${payload.admission_date}\n` +
+              `Monthly Fee: ${feeAmount} {{ currency_code }}\n\n` +
+              `${currentMonth} ${currentYear} Fee Status: ${feeStatus}`;
+            
+            alert(msg);
+          }
         });
 
       async function uploadPhoto(id, file) {
@@ -1164,17 +1261,53 @@
               method: "POST",
               body: fd,
             });
-            const data = await res.json();
+            if (res.redirected) {
+              throw new Error('Request was redirected. Please log in as admin and try again.');
+            }
+            const ct = res.headers.get('content-type') || '';
+            let data;
+            if (ct.includes('application/json')) {
+              data = await res.json();
+            } else {
+              const text = await res.text();
+              throw new Error('Server returned HTML instead of JSON. Are you logged in as admin?\n\nDetails:\n' + text.slice(0, 200));
+            }
             
             if (data.ok) {
-              let msg = `✅ Successfully imported ${data.created} member(s)`;
+              // Show detailed AI detection results
+              let msg = `✅ Successfully imported!\n\n`;
+              msg += `📊 Results:\n`;
+              msg += `   • Created: ${data.created} new member(s)\n`;
+              if (data.updated > 0) {
+                msg += `   • Updated: ${data.updated} existing member(s)\n`;
+              }
               if (data.skipped > 0) {
-                msg += `\n⚠️ Skipped ${data.skipped} (duplicates or invalid data)`;
+                msg += `   • Skipped: ${data.skipped} (duplicates/invalid)\n`;
               }
-              if (data.columns_detected) {
-                const detected = Object.keys(data.columns_detected).join(', ');
-                msg += `\n📋 Auto-detected columns: ${detected}`;
+              
+              if (data.ai_detection) {
+                const ai = data.ai_detection;
+                msg += `\n🤖 AI Auto-Detection:\n`;
+                msg += `   • Quality: ${ai.detection_quality}% (${ai.confidence})\n`;
+                msg += `   • Mapped: ${ai.mapped_columns}/${ai.total_columns} columns\n`;
+                
+                if (ai.columns_detected && Object.keys(ai.columns_detected).length > 0) {
+                  msg += `\n📋 Detected Fields:\n`;
+                  for (const [field, column] of Object.entries(ai.columns_detected)) {
+                    msg += `   • ${field} ← "${column}"\n`;
+                  }
+                }
+                
+                if (ai.unmapped_columns && ai.unmapped_columns.length > 0 && ai.unmapped_columns.length <= 5) {
+                  msg += `\n⚠️ Unmapped columns: ${ai.unmapped_columns.join(', ')}`;
+                }
               }
+              
+              if (data.errors && data.errors.length > 0) {
+                msg += `\n\n❌ Errors:\n`;
+                data.errors.forEach(err => msg += `   • ${err}\n`);
+              }
+              
               alert(msg);
               document.getElementById("csvfile").value = '';
               fetchMembers();

@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <html lang="en" data-bs-theme="dark">
-  <head>
+  <head>              
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content="Premium Gym Management & POS System" />
@@ -81,33 +81,56 @@
 
       <div class="row g-3 mb-4">
         <div class="col-12 mb-2 d-flex gap-2">
-          <button
+          <!-- <button
             id="btnEmailBackup"
             class="btn btn-outline-primary btn-sm"
             onclick="emailBackup()"
           >
             <i class="bi bi-envelope-paper me-1"></i>Email Backup
-          </button>
-          <button
+          </button> -->
+          <!-- <button
             id="btnDriveBackup"
             class="btn btn-outline-success btn-sm"
             onclick="driveBackup()"
           >
             <i class="bi bi-google-drive me-1"></i>Drive Backup
-          </button>
-          <button
+          </button> -->
+          <!-- <button
             id="btnDownloadBackup"
             class="btn btn-outline-secondary btn-sm"
             onclick="downloadBackup()"
           >
             <i class="bi bi-download me-1"></i>Download Backup
-          </button>
+          </button> -->
           <a class="btn btn-outline-secondary btn-sm" href="/members"
             ><i class="bi bi-people me-1"></i>Manage Members</a
           >
           <a class="btn btn-outline-success btn-sm" href="/fees"
             ><i class="bi bi-cash-coin me-1"></i>Monthly Fees</a
           >
+          <button
+            class="btn btn-outline-info btn-sm"
+            data-bs-toggle="modal"
+            data-bs-target="#monthlyFeesModal"
+            title="View detailed monthly fees analysis"
+          >
+            <i class="bi bi-graph-up me-1"></i>Fees Analysis
+          </button>
+          <button
+            id="btnSystemReset"
+            class="btn btn-outline-danger btn-sm"
+            title="Reset system to factory defaults"
+          >
+            <i class="bi bi-exclamation-triangle me-1"></i>System Reset
+          </button>
+          <button
+            id="btnSendReminders"
+            class="btn btn-outline-info btn-sm"
+            title="Send monthly fee reminders now"
+            onclick="sendRemindersNow()"
+          >
+            <i class="bi bi-bell me-1"></i>Send Reminders
+          </button>
         </div>
         <div class="col-md-3">
           <a class="text-decoration-none" href="/members">
@@ -157,19 +180,6 @@
               </div>
             </div>
           </a>
-        </div>
-      </div>
-
-      <div class="row g-3 mb-4">
-        <div class="col-md-3">
-          <div class="card text-center kpi-card" style="--d: 0.2s">
-            <div class="card-body">
-              <div class="text-muted">Collected This Month</div>
-              <div class="display-6">
-                <span id="collectedAmt">0</span> {{ currency_code or '' }}
-              </div>
-            </div>
-          </div>
         </div>
       </div>
 
@@ -265,7 +275,121 @@
         </tbody>
       </table>
     </div>
-    <!-- Settings Modal -->
+    
+    <!-- Pay Confirmation Modal -->
+    <div class="modal fade" id="payModal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog">
+        <div class="modal-content bg-dark text-light border border-success">
+          <div class="modal-header">
+            <h5 class="modal-title"><i class="bi bi-cash-coin"></i> Confirm Payment</h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <div class="mb-3">
+              <label class="form-label">Payment Method</label>
+              <select id="payMethod" class="form-select">
+                <option value="cash" selected>Cash</option>
+                <option value="bank">Bank</option>
+                <option value="online">Online</option>
+              </select>
+              <div class="form-text">Choose how the member paid.</div>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Amount</label>
+              <input id="payAmount" type="number" min="0" step="0.01" class="form-control" placeholder="Leave blank to use default" />
+              <div class="form-text">Blank uses member fee or gym monthly price.</div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-outline-light" data-bs-dismiss="modal">Cancel</button>
+            <button id="payConfirmBtn" class="btn btn-success" data-member-id="" data-year="" data-month="">Confirm & Slip</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal fade" id="collectedDetailsModal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content bg-dark text-light border border-success">
+          <div class="modal-header bg-success text-white">
+            <h5 class="modal-title">
+              <i class="bi bi-cash-stack"></i> Collected This Month - Detailed Breakdown
+            </h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <div class="row g-3 mb-4">
+              <div class="col-md-3">
+                <div class="card bg-dark border-success">
+                  <div class="card-body text-center">
+                    <small class="text-muted">Total Collected</small>
+                    <h4 id="collectedTotal" class="text-success mb-0">0 PKR</h4>
+                  </div>
+                </div>
+              </div>
+              <div class="col-md-3">
+                <div class="card bg-dark border-info">
+                  <div class="card-body text-center">
+                    <small class="text-muted">Paid Members</small>
+                    <h4 id="collectedCount" class="text-info mb-0">0</h4>
+                  </div>
+                </div>
+              </div>
+              <div class="col-md-3">
+                <div class="card bg-dark border-warning">
+                  <div class="card-body text-center">
+                    <small class="text-muted">Average Fee</small>
+                    <h4 id="collectedAvg" class="text-warning mb-0">0 PKR</h4>
+                  </div>
+                </div>
+              </div>
+              <div class="col-md-3">
+                <div class="card bg-dark border-primary">
+                  <div class="card-body text-center">
+                    <small class="text-muted">Month/Year</small>
+                    <h4 id="collectedMonth" class="text-primary mb-0">-</h4>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="card bg-dark border-success">
+              <div class="card-header bg-success text-white">
+                <h6 class="mb-0"><i class="bi bi-people"></i> Paid Members Details</h6>
+              </div>
+              <div class="card-body">
+                <div class="table-responsive">
+                  <table class="table table-dark table-hover table-sm">
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Phone</th>
+                        <th>Email</th>
+                        <th>Amount</th>
+                        <th>Paid Date</th>
+                        <th>Admission</th>
+                        <th>Status</th>
+                        <th>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody id="collectedMembersTable">
+                      <tr><td colspan="8" class="text-center">Loading...</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+            <button type="button" class="btn btn-success" onclick="exportCollectedData()">
+              <i class="bi bi-download"></i> Export Data
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div class="modal fade" id="settingsModal" tabindex="-1" aria-hidden="true">
       <div class="modal-dialog modal-lg modal-dialog-scrollable">
         <div class="modal-content bg-dark text-light border border-secondary">
@@ -345,6 +469,36 @@
                   Upload Logo
                 </button>
               </div>
+              <div class="col-12">
+                <hr/>
+                <h6><i class="bi bi-bell"></i> Monthly Reminders</h6>
+                <div class="mb-2">
+                  <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="reminderEnabled" />
+                    <label class="form-check-label" for="reminderEnabled">
+                      Enable automatic monthly fee reminders
+                    </label>
+                  </div>
+                  <div class="form-text">Send WhatsApp reminders to unpaid members every month</div>
+                </div>
+                <div class="row g-2 mb-2">
+                  <div class="col-md-6">
+                    <label class="form-label">Reminder Time (Hour)</label>
+                    <input id="reminderHour" type="number" min="0" max="23" class="form-control" placeholder="9" />
+                    <div class="form-text">24-hour format (0-23)</div>
+                  </div>
+                  <div class="col-md-6">
+                    <label class="form-label">Reminder Time (Minute)</label>
+                    <input id="reminderMinute" type="number" min="0" max="59" class="form-control" placeholder="0" />
+                  </div>
+                </div>
+                <div class="mb-2">
+                  <span class="badge text-bg-secondary" id="reminderStatus">Checking...</span>
+                </div>
+                <button class="btn btn-primary" onclick="saveReminderSettings()">
+                  Save Reminder Settings
+                </button>
+              </div>
             </div>
           </div>
           <div class="modal-footer">
@@ -355,6 +509,317 @@
             >
               Close
             </button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="modal fade" id="monthlyFeesModal" tabindex="-1" aria-labelledby="monthlyFeesModalLabel" aria-hidden="true">
+      <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content bg-dark text-light border border-info">
+          <div class="modal-header">
+            <h5 class="modal-title" id="monthlyFeesModalLabel">
+              <i class="bi bi-graph-up text-info"></i> Monthly Fees Analysis
+            </h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <ul class="nav nav-tabs mb-3" role="tablist">
+              <li class="nav-item" role="presentation">
+                <button class="nav-link active" id="current-tab" data-bs-toggle="tab" data-bs-target="#current" type="button" role="tab">
+                  <i class="bi bi-calendar-month"></i> Current Month
+                </button>
+              </li>
+              <li class="nav-item" role="presentation">
+                <button class="nav-link" id="history-tab" data-bs-toggle="tab" data-bs-target="#history" type="button" role="tab">
+                  <i class="bi bi-clock-history"></i> Payment History
+                </button>
+              </li>
+              <li class="nav-item" role="presentation">
+                <button class="nav-link" id="unpaid-tab" data-bs-toggle="tab" data-bs-target="#unpaid" type="button" role="tab">
+                  <i class="bi bi-exclamation-circle"></i> Unpaid Members
+                </button>
+              </li>
+            </ul>
+
+            <div class="tab-content">
+              <div class="tab-pane fade show active" id="current" role="tabpanel">
+                <div class="row g-3 mb-3">
+                  <div class="col-md-4">
+                    <div class="card text-center">
+                      <div class="card-body">
+                        <h6 class="text-success">Paid</h6>
+                        <h3 id="currentPaid">0</h3>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="col-md-4">
+                    <div class="card text-center">
+                      <div class="card-body">
+                        <h6 class="text-warning">Unpaid</h6>
+                        <h3 id="currentUnpaid">0</h3>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="col-md-4">
+                    <div class="card text-center">
+                      <div class="card-body">
+                        <h6 class="text-info">Collected</h6>
+                        <h3 id="currentCollected">0 PKR</h3>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                <h6>Current Month Members</h6>
+                <div class="table-responsive">
+                  <table class="table table-sm table-hover">
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Phone</th>
+                        <th>Status</th>
+                        <th>Amount</th>
+                        <th>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody id="currentMembersTable">
+                      <tr><td colspan="5" class="text-center">Loading...</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div class="tab-pane fade" id="history" role="tabpanel">
+                <div class="mb-3">
+                  <label class="form-label">Select Month</label>
+                  <div class="row g-2">
+                    <div class="col-md-6">
+                      <select id="historyMonth" class="form-select">
+                        <option value="1">January</option>
+                        <option value="2">February</option>
+                        <option value="3">March</option>
+                        <option value="4">April</option>
+                        <option value="5">May</option>
+                        <option value="6">June</option>
+                        <option value="7">July</option>
+                        <option value="8">August</option>
+                        <option value="9">September</option>
+                        <option value="10">October</option>
+                        <option value="11">November</option>
+                        <option value="12">December</option>
+                      </select>
+                    </div>
+                    <div class="col-md-4">
+                      <input id="historyYear" type="number" class="form-control" placeholder="Year" />
+                    </div>
+                    <div class="col-md-2">
+                      <button class="btn btn-primary w-100" onclick="loadHistoryMonth()">Load</button>
+                    </div>
+                  </div>
+                </div>
+                <div class="table-responsive">
+                  <table class="table table-sm table-hover">
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Status</th>
+                        <th>Amount</th>
+                        <th>Paid Date</th>
+                        <th>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody id="historyTable">
+                      <tr><td colspan="5" class="text-center">Select month to view</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div class="tab-pane fade" id="unpaid" role="tabpanel">
+                <h6>Members with Pending Payments</h6>
+                <div class="table-responsive">
+                  <table class="table table-sm table-hover">
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Phone</th>
+                        <th>Last Paid</th>
+                        <th>Months Unpaid</th>
+                        <th>Total Due</th>
+                        <th>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody id="unpaidTable">
+                      <tr><td colspan="6" class="text-center">Loading...</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Close</button>
+            <button type="button" class="btn btn-success" onclick="payMemberThisMonth()">
+              <i class="bi bi-cash-coin"></i> Pay This Month & Slip
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal fade" id="memberDetailModal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-xl">
+        <div class="modal-content bg-dark text-light border border-primary">
+          <div class="modal-header">
+            <h5 class="modal-title">
+              <i class="bi bi-person-circle"></i> Complete Member Details
+            </h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <div class="card bg-dark border-info mb-3">
+              <div class="card-header bg-info text-dark">
+                <h6 class="mb-0"><i class="bi bi-person-badge"></i> Personal Information</h6>
+              </div>
+              <div class="card-body">
+                <div class="row g-3">
+                  <div class="col-md-3">
+                    <small class="text-muted">Full Name</small>
+                    <div id="detailName" class="fw-bold">-</div>
+                  </div>
+                  <div class="col-md-3">
+                    <small class="text-muted">Phone</small>
+                    <div id="detailPhone">-</div>
+                  </div>
+                  <div class="col-md-3">
+                    <small class="text-muted">Email</small>
+                    <div id="detailEmail">-</div>
+                  </div>
+                  <div class="col-md-3">
+                    <small class="text-muted">CNIC</small>
+                    <div id="detailCNIC">-</div>
+                  </div>
+                  <div class="col-md-6">
+                    <small class="text-muted">Address</small>
+                    <div id="detailAddress">-</div>
+                  </div>
+                  <div class="col-md-3">
+                    <small class="text-muted">Gender</small>
+                    <div id="detailGender">-</div>
+                  </div>
+                  <div class="col-md-3">
+                    <small class="text-muted">Date of Birth</small>
+                    <div id="detailDOB">-</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="card bg-dark border-success mb-3">
+              <div class="card-header bg-success text-white">
+                <h6 class="mb-0"><i class="bi bi-calendar-check"></i> Membership Details</h6>
+              </div>
+              <div class="card-body">
+                <div class="row g-3">
+                  <div class="col-md-3">
+                    <small class="text-muted">Admission Date</small>
+                    <div id="detailAdmission" class="fw-bold">-</div>
+                  </div>
+                  <div class="col-md-3">
+                    <small class="text-muted">Monthly Fee</small>
+                    <div id="detailMonthlyFee" class="text-warning">-</div>
+                  </div>
+                  <div class="col-md-3">
+                    <small class="text-muted">Referred By</small>
+                    <div id="detailReferred">-</div>
+                  </div>
+                  <div class="col-md-3">
+                    <small class="text-muted">Status</small>
+                    <div id="detailStatus">-</div>
+                  </div>
+                  <div class="col-md-12">
+                    <small class="text-muted">Notes</small>
+                    <div id="detailNotes" class="text-muted fst-italic">-</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="row g-3 mb-3">
+              <div class="col-md-3">
+                <div class="card bg-dark border-success">
+                  <div class="card-body text-center">
+                    <small class="text-muted">Total Paid</small>
+                    <h5 id="detailTotalPaid" class="text-success mb-0">-</h5>
+                  </div>
+                </div>
+              </div>
+              <div class="col-md-3">
+                <div class="card bg-dark border-danger">
+                  <div class="card-body text-center">
+                    <small class="text-muted">Total Due</small>
+                    <h5 id="detailTotalDue" class="text-danger mb-0">-</h5>
+                  </div>
+                </div>
+              </div>
+              <div class="col-md-3">
+                <div class="card bg-dark border-primary">
+                  <div class="card-body text-center">
+                    <small class="text-muted">Last Paid Month</small>
+                    <h5 id="memberLastPaid" class="text-primary mb-0">-</h5>
+                  </div>
+                </div>
+              </div>
+              <div class="col-md-3">
+                <div class="card bg-dark border-warning">
+                  <div class="card-body text-center">
+                    <small class="text-muted">Months Unpaid</small>
+                    <h5 id="memberUnpaidCount" class="text-warning mb-0">0</h5>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="card bg-dark border-primary">
+              <div class="card-header bg-primary text-white">
+                <h6 class="mb-0"><i class="bi bi-clock-history"></i> Payment Timeline</h6>
+              </div>
+              <div class="card-body">
+                <div id="memberTimeline" class="list-group">
+                  <div class="text-center py-3">Loading...</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Close</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal fade" id="systemResetModal" tabindex="-1" aria-labelledby="systemResetModalLabel" aria-hidden="true">
+      <div class="modal-dialog">
+        <div class="modal-content bg-dark text-light border border-danger">
+          <div class="modal-header">
+            <h5 class="modal-title" id="systemResetModalLabel"><i class="bi bi-exclamation-triangle text-warning"></i> Confirm System Reset</h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <p class="mb-2">This will erase all data and reset settings to defaults.</p>
+            <ul>
+              <li>Members, fees, attendance records</li>
+              <li>Uploads and generated snapshots</li>
+              <li>Settings reset to factory defaults</li>
+            </ul>
+            <p class="fw-semibold text-danger">This action cannot be undone.</p>
+            <label for="resetConfirmInput" class="form-label">Type <code>RESET</code> to confirm:</label>
+            <input type="text" id="resetConfirmInput" class="form-control" aria-describedby="resetHelp" placeholder="RESET">
+            <div id="resetHelp" class="form-text">Safety check to prevent accidental resets.</div>
+            <div class="mt-2" id="resetStatus" role="status" aria-live="polite"></div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Cancel</button>
+            <button type="button" class="btn btn-danger" id="confirmSystemResetBtn">Reset System</button>
           </div>
         </div>
       </div>
@@ -757,6 +1222,117 @@
               // Simple navigation to GET endpoint triggers browser download
               window.location.href = '/admin/backup/download';
             }
+            // Monthly Reminders
+            async function loadReminderSettings(){
+              try{
+                const res = await fetch('/admin/settings/reminders');
+                const data = await res.json();
+                if(data.ok){
+                  document.getElementById('reminderEnabled').checked = data.enabled;
+                  document.getElementById('reminderHour').value = data.hour;
+                  document.getElementById('reminderMinute').value = data.minute;
+                  const status = document.getElementById('reminderStatus');
+                  if(data.enabled){
+                    status.className = 'badge text-bg-success';
+                    status.textContent = `Enabled - Daily at ${String(data.hour).padStart(2,'0')}:${String(data.minute).padStart(2,'0')}`;
+                  } else {
+                    status.className = 'badge text-bg-secondary';
+                    status.textContent = 'Disabled';
+                  }
+                }
+              } catch(e){
+                document.getElementById('reminderStatus').textContent = 'Error loading settings';
+              }
+            }
+            async function saveReminderSettings(){
+              const enabled = document.getElementById('reminderEnabled').checked;
+              const hour = parseInt(document.getElementById('reminderHour').value || '9');
+              const minute = parseInt(document.getElementById('reminderMinute').value || '0');
+              try{
+                const res = await fetch('/admin/settings/reminders', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ enabled, hour, minute })
+                });
+                const data = await res.json();
+                if(data.ok){
+                  showToast(data.message || 'Reminder settings saved', 'success');
+                  loadReminderSettings();
+                } else {
+                  showToast('Failed to save: ' + (data.error || 'unknown'), 'danger');
+                }
+              } catch(e){
+                showToast('Error saving reminder settings', 'danger');
+              }
+            }
+            async function sendRemindersNow(){
+              if(!confirm('Send fee reminders to all unpaid members for this month?')) return;
+              try{
+                const res = await fetch('/admin/schedule/run-now', { method: 'POST' });
+                const data = await res.json();
+                if(data.ok){
+                  showToast(`Reminders sent: ${data.sent || 0} success, ${data.failed || 0} failed`, 'success');
+                } else {
+                  showToast('Failed: ' + (data.error || 'unknown'), 'danger');
+                }
+              } catch(e){
+                showToast('Error sending reminders', 'danger');
+              }
+            }
+            // System Reset: open modal and perform POST /admin/system/reset with confirmation
+            (function(){
+              const btn = document.getElementById('btnSystemReset');
+              const modalEl = document.getElementById('systemResetModal');
+              const confirmInput = document.getElementById('resetConfirmInput');
+              const statusEl = document.getElementById('resetStatus');
+              const confirmBtn = document.getElementById('confirmSystemResetBtn');
+              let modalInstance = null;
+              if (window.bootstrap && modalEl){
+                modalInstance = new bootstrap.Modal(modalEl);
+              }
+              if (btn && modalInstance){
+                btn.addEventListener('click', function(){
+                  statusEl.textContent = '';
+                  confirmInput.value = '';
+                  modalInstance.show();
+                  setTimeout(()=>confirmInput.focus(), 200);
+                });
+              }
+              async function performReset(){
+                const txt = (confirmInput.value || '').trim();
+                if (txt !== 'RESET'){
+                  statusEl.textContent = 'Please type RESET to confirm.';
+                  statusEl.className = 'text-danger';
+                  return;
+                }
+                statusEl.textContent = 'Resetting system...';
+                statusEl.className = 'text-warning';
+                try{
+                  const resp = await fetch('/admin/system/reset', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ confirm: 'RESET' })
+                  });
+                  let data = null;
+                  try { data = await resp.json(); } catch {}
+                  if (resp.ok && data && data.ok){
+                    statusEl.textContent = 'System reset completed successfully.';
+                    statusEl.className = 'text-success';
+                    setTimeout(()=>{ modalInstance.hide(); window.location.reload(); }, 800);
+                  } else {
+                    const msg = data && data.error ? data.error : `HTTP ${resp.status}`;
+                    statusEl.textContent = 'Reset failed: ' + msg;
+                    statusEl.className = 'text-danger';
+                  }
+                } catch(e){
+                  statusEl.textContent = 'Network error during reset.';
+                  statusEl.className = 'text-danger';
+                }
+              }
+              if (confirmBtn){
+                confirmBtn.addEventListener('click', performReset);
+              }
+            })();
             async function checkOnboarding() {
               try {
                 const r = await fetch("/onboarding/status");
@@ -795,8 +1371,417 @@
               } catch (e) {}
             }
             checkOnboarding();
+            loadReminderSettings();
+            
+            // Monthly Fees Analysis
+            let currentMonthlyFeesModal = null;
+            let memberDetailModal = null;
+            
+            document.addEventListener('DOMContentLoaded', function(){
+              const modalEl = document.getElementById('monthlyFeesModal');
+              const memberModalEl = document.getElementById('memberDetailModal');
+              if(modalEl) currentMonthlyFeesModal = new bootstrap.Modal(modalEl);
+              if(memberModalEl) memberDetailModal = new bootstrap.Modal(memberModalEl);
+              
+              modalEl?.addEventListener('shown.bs.modal', function(){
+                loadCurrentMonthFees();
+                loadUnpaidMembers();
+                initHistorySelectors();
+              });
+            });
+            
+            async function loadCurrentMonthFees(){
+              const now = new Date();
+              const year = now.getFullYear();
+              const month = now.getMonth() + 1;
+              try{
+                const res = await fetch(`/api/fees/month?year=${year}&month=${month}`);
+                const data = await res.json();
+                if(data.ok){
+                  document.getElementById('currentPaid').textContent = data.paid_count || 0;
+                  document.getElementById('currentUnpaid').textContent = data.unpaid_count || 0;
+                  document.getElementById('currentCollected').textContent = `${(data.collected || 0).toLocaleString()} ${data.currency || 'PKR'}`;
+                  
+                  const tbody = document.getElementById('currentMembersTable');
+                  if(data.members && data.members.length > 0){
+                    tbody.innerHTML = data.members.map(m => `
+                      <tr>
+                        <td>${m.name}</td>
+                        <td>${m.phone || '-'}</td>
+                        <td><span class="badge text-bg-${m.status === 'Paid' ? 'success' : 'warning'}">${m.status}</span></td>
+                        <td>${m.amount ? m.amount.toLocaleString() : '-'} ${data.currency || 'PKR'}</td>
+                        <td>
+                          <button class="btn btn-sm btn-outline-info" onclick="showMemberDetail(${m.member_id})">View</button>
+                          ${m.status === 'Unpaid' ? 
+                            `<button class=\"btn btn-sm btn-success ms-1\" onclick=\"openPayModal(${m.member_id}, ${year}, ${month})\"><i class=\"bi bi-cash-coin\"></i> Pay & Slip</button>` :
+                            `<a class=\"btn btn-sm btn-outline-secondary ms-1\" target=\"_blank\" href=\"/receipt/member/${m.member_id}/${year}/${month}\"><i class=\"bi bi-receipt\"></i> Slip</a>`
+                          }
+                        </td>
+                      </tr>
+                    `).join('');
+                  } else {
+                    tbody.innerHTML = '<tr><td colspan="5" class="text-center">No data</td></tr>';
+                  }
+                }
+              } catch(e){
+                console.error(e);
+              }
+            }
+            
+            function initHistorySelectors(){
+              const now = new Date();
+              document.getElementById('historyMonth').value = now.getMonth() + 1;
+              document.getElementById('historyYear').value = now.getFullYear();
+            }
+            
+            async function loadHistoryMonth(){
+              const month = document.getElementById('historyMonth').value;
+              const year = document.getElementById('historyYear').value;
+              try{
+                const res = await fetch(`/api/fees/month?year=${year}&month=${month}`);
+                const data = await res.json();
+                const tbody = document.getElementById('historyTable');
+                if(data.ok && data.members && data.members.length > 0){
+                  tbody.innerHTML = data.members.map(m => `
+                    <tr>
+                      <td>${m.name}</td>
+                      <td><span class="badge text-bg-${m.status === 'Paid' ? 'success' : m.status === 'Unpaid' ? 'warning' : 'secondary'}">${m.status}</span></td>
+                      <td>${m.amount ? m.amount.toLocaleString() : '-'} ${data.currency || 'PKR'}</td>
+                      <td>${m.paid_date || '-'}</td>
+                      <td>
+                        <button class="btn btn-sm btn-outline-info" onclick="showMemberDetail(${m.member_id})">View</button>
+                        ${m.status === 'Unpaid' ? 
+                          `<button class=\"btn btn-sm btn-success ms-1\" onclick=\"openPayModal(${m.member_id}, ${year}, ${month})\"><i class=\"bi bi-cash-coin\"></i> Pay & Slip</button>` :
+                          `<a class=\"btn btn-sm btn-outline-secondary ms-1\" target=\"_blank\" href=\"/receipt/member/${m.member_id}/${year}/${month}\"><i class=\"bi bi-receipt\"></i> Slip</a>`
+                        }
+                      </td>
+                    </tr>
+                  `).join('');
+                } else {
+                  tbody.innerHTML = '<tr><td colspan="5" class="text-center">No data for this month</td></tr>';
+                }
+              } catch(e){
+                tbody.innerHTML = '<tr><td colspan="5" class="text-center text-danger">Error loading data</td></tr>';
+              }
+            }
+            
+            async function loadUnpaidMembers(){
+              try{
+                const res = await fetch('/api/fees/unpaid-summary');
+                const data = await res.json();
+                const tbody = document.getElementById('unpaidTable');
+                if(data.ok && data.members && data.members.length > 0){
+                  tbody.innerHTML = data.members.map(m => `
+                    <tr>
+                      <td>${m.name}</td>
+                      <td>${m.phone || '-'}</td>
+                      <td><span class="badge text-bg-${m.last_paid_month ? 'info' : 'secondary'}">${m.last_paid_month || 'Never'}</span></td>
+                      <td><span class="badge text-bg-warning">${m.months_unpaid || 0}</span></td>
+                      <td class="text-danger fw-bold">${(m.total_due || 0).toLocaleString()} PKR</td>
+                      <td>
+                        <button class="btn btn-sm btn-outline-info" onclick="showMemberDetail(${m.id})">View</button>
+                        <button class="btn btn-sm btn-success ms-1" onclick="openPayModal(${m.id}, (new Date()).getFullYear(), (new Date()).getMonth()+1)"><i class="bi bi-cash-coin"></i> Pay This Month</button>
+                      </td>
+                    </tr>
+                  `).join('');
+                } else {
+                  tbody.innerHTML = '<tr><td colspan="6" class="text-center">No unpaid members</td></tr>';
+                }
+              } catch(e){
+                console.error(e);
+              }
+            }
+
+            async function payFor(memberId, year, month){
+              try{
+                if(!memberId || !year || !month){
+                  showToast('Missing details for payment', 'danger');
+                  return;
+                }
+                if(!confirm(`Mark paid for ${month}/${year}? A receipt will open.`)) return;
+                const payload = { member_id: parseInt(memberId), year: parseInt(year), month: parseInt(month) };
+                const res = await fetch('/api/payment/pay-now', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify(payload)
+                });
+                let data = null;
+                try { data = await res.json(); } catch {}
+                if(res.ok && data && data.ok){
+                  showToast('Payment recorded. Opening receipt…', 'success');
+                  const url = data.receipt_url || `/receipt/member/${memberId}/${year}/${month}`;
+                  window.open(url, '_blank');
+                  // Refresh views
+                  loadCurrentMonthFees();
+                  const hm = parseInt(document.getElementById('historyMonth')?.value || '0');
+                  const hy = parseInt(document.getElementById('historyYear')?.value || '0');
+                  if(hm === parseInt(month) && hy === parseInt(year)){
+                    loadHistoryMonth();
+                  }
+                  loadUnpaidMembers();
+                } else {
+                  const msg = data && data.error ? data.error : `HTTP ${res.status}`;
+                  showToast('Payment failed: ' + msg, 'danger');
+                }
+              } catch(e){
+                showToast('Error processing payment', 'danger');
+              }
+            }
+
+            // Compatibility wrapper for older UI calls
+            function markPaid(memberId, month, year){
+              // match original signature (memberId, month, year)
+              return payFor(memberId, year, month);
+            }
+
+            // Open Pay modal with context
+            let payModalInstance;
+            function openPayModal(memberId, year, month, amount){
+              const modalEl = document.getElementById('payModal');
+              if(!payModalInstance){
+                payModalInstance = new bootstrap.Modal(modalEl);
+              }
+              const btn = document.getElementById('payConfirmBtn');
+              btn.dataset.memberId = String(memberId);
+              btn.dataset.year = String(year);
+              btn.dataset.month = String(month);
+              document.getElementById('payMethod').value = 'cash';
+              const amtEl = document.getElementById('payAmount');
+              amtEl.value = amount != null && amount !== '' ? String(amount) : '';
+              payModalInstance.show();
+            }
+
+            // Handle confirm from Pay modal
+            (function(){
+              const btn = document.getElementById('payConfirmBtn');
+              if(!btn) return;
+              btn.addEventListener('click', async function(){
+                const memberId = parseInt(this.dataset.memberId || '0');
+                const year = parseInt(this.dataset.year || '0');
+                const month = parseInt(this.dataset.month || '0');
+                const method = (document.getElementById('payMethod').value || 'cash');
+                const amtStr = document.getElementById('payAmount').value;
+                const amount = amtStr.trim() === '' ? undefined : parseFloat(amtStr);
+                if(!memberId || !year || !month){
+                  showToast('Missing details for payment', 'danger');
+                  return;
+                }
+                try{
+                  setLoading(btn, true, 'Processing…');
+                  const payload = { member_id: memberId, year, month, method };
+                  if(typeof amount === 'number' && !Number.isNaN(amount)) payload.amount = amount;
+                  const res = await fetch('/api/payment/pay-now', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                  });
+                  let data = null;
+                  try { data = await res.json(); } catch {}
+                  if(res.ok && data && data.ok){
+                    showToast('Payment recorded. Opening receipt…', 'success');
+                    const url = data.receipt_url || `/receipt/member/${memberId}/${year}/${month}`;
+                    try { payModalInstance?.hide(); } catch {}
+                    window.open(url, '_blank');
+                    loadCurrentMonthFees();
+                    const hm = parseInt(document.getElementById('historyMonth')?.value || '0');
+                    const hy = parseInt(document.getElementById('historyYear')?.value || '0');
+                    if(hm === parseInt(month) && hy === parseInt(year)){
+                      loadHistoryMonth();
+                    }
+                    loadUnpaidMembers();
+                  } else {
+                    const msg = data && data.error ? data.error : `HTTP ${res.status}`;
+                    showToast('Payment failed: ' + msg, 'danger');
+                  }
+                } catch(e){
+                  showToast('Error processing payment', 'danger');
+                } finally {
+                  setLoading(btn, false);
+                }
+              });
+            })();
+            
+            async function showMemberDetail(memberId){
+              try{
+                const res = await fetch(`/api/member/${memberId}/payment-history`);
+                const data = await res.json();
+                if(data.ok){
+                  const m = data.member;
+                  window.currentMemberId = memberId;
+                  
+                  // Personal Information
+                  document.getElementById('detailName').textContent = m.name || '-';
+                  document.getElementById('detailPhone').textContent = m.phone || '-';
+                  document.getElementById('detailEmail').textContent = m.email || '-';
+                  document.getElementById('detailCNIC').textContent = m.cnic || '-';
+                  document.getElementById('detailAddress').textContent = m.address || '-';
+                  document.getElementById('detailGender').textContent = m.gender || '-';
+                  document.getElementById('detailDOB').textContent = m.date_of_birth || '-';
+                  
+                  // Membership Details
+                  document.getElementById('detailAdmission').textContent = m.admission_date || '-';
+                  document.getElementById('detailMonthlyFee').textContent = m.monthly_price ? `${data.currency || 'PKR'} ${m.monthly_price.toLocaleString()}` : '-';
+                  document.getElementById('detailReferred').textContent = m.referred_by || '-';
+                  document.getElementById('detailStatus').innerHTML = m.is_active ? 
+                    '<span class="badge bg-success">Active</span>' : 
+                    '<span class="badge bg-secondary">Inactive</span>';
+                  document.getElementById('detailNotes').textContent = m.notes || 'No notes';
+                  
+                  // Payment Statistics
+                  const paidPayments = data.payments.filter(p => p.status === 'Paid');
+                  const unpaidPayments = data.payments.filter(p => p.status === 'Unpaid');
+                  const totalPaid = paidPayments.reduce((sum, p) => sum + (p.amount || 0), 0);
+                  const totalDue = unpaidPayments.length * (m.monthly_price || 0);
+                  
+                  document.getElementById('detailTotalPaid').textContent = `${data.currency || 'PKR'} ${totalPaid.toLocaleString()}`;
+                  document.getElementById('detailTotalDue').textContent = `${data.currency || 'PKR'} ${totalDue.toLocaleString()}`;
+                  document.getElementById('memberLastPaid').textContent = data.last_paid_month || 'Never paid';
+                  document.getElementById('memberUnpaidCount').textContent = data.months_unpaid || 0;
+                  
+                  // Payment Timeline
+                  const timeline = document.getElementById('memberTimeline');
+                  if(data.payments && data.payments.length > 0){
+                    timeline.innerHTML = data.payments.map(p => `
+                      <div class="list-group-item list-group-item-action bg-dark border-secondary">
+                        <div class="d-flex w-100 justify-content-between">
+                          <h6 class="mb-1">${p.month_name} ${p.year}</h6>
+                          <span class="badge text-bg-${p.status === 'Paid' ? 'success' : p.status === 'Unpaid' ? 'warning' : 'secondary'}">${p.status}</span>
+                        </div>
+                        <p class="mb-1">Amount: <strong>${p.amount ? p.amount.toLocaleString() : '-'} ${data.currency || 'PKR'}</strong></p>
+                        ${p.paid_date ? `<small class="text-muted">Paid on: ${p.paid_date}</small>` : ''}
+                      </div>
+                    `).join('');
+                  } else {
+                    timeline.innerHTML = '<div class="text-center py-3">No payment history</div>';
+                  }
+                  
+                  memberDetailModal?.show();
+                }
+              } catch(e){
+                console.error(e);
+                showToast('Error loading member details', 'danger');
+              }
+            }
+
+            function payMemberThisMonth(){
+              try{
+                const memberId = window.currentMemberId;
+                if(!memberId){
+                  showToast('Open member details first', 'warning');
+                  return;
+                }
+                const now = new Date();
+                const year = now.getFullYear();
+                const month = now.getMonth() + 1;
+                openPayModal(memberId, year, month);
+              } catch(e){
+                showToast('Unable to start payment', 'danger');
+              }
+            }
+
+            // Collected This Month Details
+            let collectedDetailsModal;
+            async function showCollectedDetails() {
+              try {
+                const now = new Date();
+                const year = now.getFullYear();
+                const month = now.getMonth() + 1;
+                
+                const res = await fetch(`/api/fees/month?year=${year}&month=${month}`);
+                const data = await res.json();
+                
+                if (data.ok) {
+                  const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
+                                       'July', 'August', 'September', 'October', 'November', 'December'];
+                  
+                  // Summary Statistics
+                  const paidMembers = data.members.filter(m => m.status === 'Paid');
+                  const totalCollected = paidMembers.reduce((sum, m) => sum + (m.amount || 0), 0);
+                  const avgFee = paidMembers.length > 0 ? totalCollected / paidMembers.length : 0;
+                  
+                  document.getElementById('collectedTotal').textContent = 
+                    `${totalCollected.toLocaleString()} ${data.currency || 'PKR'}`;
+                  document.getElementById('collectedCount').textContent = paidMembers.length;
+                  document.getElementById('collectedAvg').textContent = 
+                    `${avgFee.toLocaleString(undefined, {maximumFractionDigits: 2})} ${data.currency || 'PKR'}`;
+                  document.getElementById('collectedMonth').textContent = 
+                    `${monthNames[month - 1]} ${year}`;
+                  
+                  // Members Table
+                  const tbody = document.getElementById('collectedMembersTable');
+                  if (paidMembers.length > 0) {
+                    tbody.innerHTML = paidMembers.map(m => `
+                      <tr>
+                        <td><strong>${m.name || '-'}</strong></td>
+                        <td>${m.phone || '-'}</td>
+                        <td>${m.email || '-'}</td>
+                        <td class="text-success"><strong>${(m.amount || 0).toLocaleString()} ${data.currency || 'PKR'}</strong></td>
+                        <td>${m.paid_date || '-'}</td>
+                        <td>${m.admission_date || '-'}</td>
+                        <td>
+                          ${m.is_active ? 
+                            '<span class="badge bg-success">Active</span>' : 
+                            '<span class="badge bg-secondary">Inactive</span>'
+                          }
+                        </td>
+                        <td>
+                          <button class="btn btn-sm btn-outline-info" onclick="showMemberDetail(${m.member_id})">
+                            <i class="bi bi-eye"></i> View
+                          </button>
+                        </td>
+                      </tr>
+                    `).join('');
+                  } else {
+                    tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted">No payments collected this month</td></tr>';
+                  }
+                  
+                  // Show modal
+                  if (!collectedDetailsModal) {
+                    collectedDetailsModal = new bootstrap.Modal(document.getElementById('collectedDetailsModal'));
+                  }
+                  collectedDetailsModal.show();
+                } else {
+                  showToast('Failed to load collection details', 'danger');
+                }
+              } catch (e) {
+                console.error(e);
+                showToast('Error loading collection details', 'danger');
+              }
+            }
+
+            // Export collected data
+            function exportCollectedData() {
+              const table = document.getElementById('collectedMembersTable');
+              const rows = Array.from(table.querySelectorAll('tr'));
+              
+              let csv = 'Name,Phone,Email,Amount,Paid Date,Admission Date,Status\n';
+              rows.forEach(row => {
+                const cells = Array.from(row.querySelectorAll('td'));
+                if (cells.length > 1) {
+                  const rowData = [
+                    cells[0].textContent.trim(),
+                    cells[1].textContent.trim(),
+                    cells[2].textContent.trim(),
+                    cells[3].textContent.trim(),
+                    cells[4].textContent.trim(),
+                    cells[5].textContent.trim(),
+                    cells[6].textContent.trim()
+                  ];
+                  csv += rowData.map(d => `"${d}"`).join(',') + '\n';
+                }
+              });
+              
+              const blob = new Blob([csv], { type: 'text/csv' });
+              const url = window.URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              const now = new Date();
+              a.download = `collected_${now.getFullYear()}_${now.getMonth()+1}.csv`;
+              a.click();
+              window.URL.revokeObjectURL(url);
+              showToast('Data exported successfully', 'success');
+            }
     </script>
-    <!-- Toast container -->
     <div
       id="toastArea"
       class="toast-container position-fixed bottom-0 end-0 p-3 toast-area"
@@ -902,3 +1887,5 @@
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
   </body>
 </html>
+Get-Process python | Stop-Process -Force
+python app.py

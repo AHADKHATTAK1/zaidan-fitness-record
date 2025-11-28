@@ -18,6 +18,7 @@ gevent==24.2.1; sys_platform != 'win32'
 twilio>=9,<10
 webdriver-manager==4.0.2
 selenium==4.38.0
+pywhatkit==5.4
 
 # Optional Postgres driver (for DATABASE_URL). Safe on Linux deploy targets.
 psycopg2-binary==2.9.9

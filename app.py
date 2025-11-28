@@ -246,6 +246,7 @@ class Member(db.Model):
     custom_training = db.Column(db.String(50), nullable=True)
     monthly_fee = db.Column(db.Float, nullable=True)
     last_contact_at = db.Column(db.DateTime, nullable=True)
+    is_active = db.Column(db.Boolean, default=True)  # Member active/inactive status
 
     def to_dict(self):
         # Compute current month fee status and last recorded amount
@@ -256,12 +257,11 @@ class Member(db.Model):
         except Exception:
             status = 'Unpaid'
         try:
-            tx = (
-                PaymentTransaction.query
-                .filter_by(member_id=self.id, plan_type='monthly', year=now.year, month=now.month)
-                .order_by(PaymentTransaction.id.desc())
-                .first()
-            )
+            tx = PaymentTransaction.query.filter_by(
+                member_id=self.id,
+                year=now.year,
+                month=now.month
+            ).order_by(PaymentTransaction.created_at.desc()).first()
             last_amt = float(tx.amount) if tx and tx.amount is not None else None
             last_time = tx.created_at.isoformat() if tx and tx.created_at else None
         except Exception:
@@ -304,6 +304,7 @@ class Member(db.Model):
             "monthly_fee": self.monthly_fee,
             "display_training_type": display_training,
             "last_contact_at": self.last_contact_at.isoformat() if self.last_contact_at else None,
+            "is_active": bool(self.is_active) if hasattr(self, 'is_active') else True,
         }
 
 class Payment(db.Model):
@@ -507,6 +508,8 @@ def _ensure_schema():
             db.session.execute(db.text("ALTER TABLE member ADD COLUMN monthly_fee REAL"))
         if not _sql_column_exists('member', 'last_contact_at'):
             db.session.execute(db.text("ALTER TABLE member ADD COLUMN last_contact_at TEXT"))
+        if not _sql_column_exists('member', 'is_active'):
+            db.session.execute(db.text("ALTER TABLE member ADD COLUMN is_active INTEGER DEFAULT 1"))
         db.session.commit()
     except Exception:
         db.session.rollback()
@@ -1442,9 +1445,19 @@ def upload_data_file():
     if not data:
         return jsonify({'ok': False, 'error': 'empty file'}), 400
     digest = _hash_bytes(data)
-    # Reject duplicate content
-    if UploadedFile.query.filter_by(content_hash=digest).first():
-        return jsonify({'ok': False, 'error': 'duplicate file content (already uploaded)'}), 400
+    # Duplicate content handling: return existing record instead of error
+    existing_upload = UploadedFile.query.filter_by(content_hash=digest).first()
+    if existing_upload:
+        return jsonify({
+            'ok': True,
+            'duplicate': True,
+            'file': {
+                'id': existing_upload.id,
+                'original_name': existing_upload.original_name,
+                'rows_count': existing_upload.rows_count
+            },
+            'message': 'Duplicate file detected; using previously uploaded file.'
+        })
     # Determine extension and parse
     ext = os.path.splitext(orig)[1].lower()
     parsed_rows = []
@@ -1464,6 +1477,13 @@ def upload_data_file():
             # snapshot max 50 rows
             snap = df.head(50)
             parsed_rows = snap.to_dict(orient='records')
+            # Convert datetime objects to strings for JSON serialization
+            for row in parsed_rows:
+                for key, value in row.items():
+                    if isinstance(value, (datetime, pd.Timestamp)):
+                        row[key] = value.strftime('%Y-%m-%d') if value else None
+                    elif pd.isna(value):
+                        row[key] = None
     except Exception:
         pass
     stored_name = f"upload_{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}_{secrets.token_hex(4)}{ext or ''}"
@@ -1567,6 +1587,377 @@ def fees_summary():
         'payment_percent': round(payment_percent, 2),
     })
 
+@app.route('/api/fees/month', methods=['GET'])
+@login_required
+def fees_month_detail():
+    try:
+        year = int(request.args.get('year') or datetime.now().year)
+        month = int(request.args.get('month') or datetime.now().month)
+    except ValueError:
+        return jsonify({"ok": False, "error": "invalid year/month"}), 400
+    
+    payments = Payment.query.filter_by(year=year, month=month).all()
+    paid_count = sum(1 for p in payments if p.status == 'Paid')
+    unpaid_count = sum(1 for p in payments if p.status == 'Unpaid')
+    
+    try:
+        currency = get_setting('currency_code') or 'PKR'
+    except Exception:
+        currency = 'PKR'
+    
+    collected = 0.0
+    members_data = []
+    
+    for p in payments:
+        member = db.session.get(Member, p.member_id)
+        if not member:
+            continue
+        
+        amount = 0.0
+        paid_date = None
+        
+        if p.status == 'Paid':
+            tx = PaymentTransaction.query.filter_by(
+                member_id=member.id,
+                year=year,
+                month=month
+            ).order_by(PaymentTransaction.created_at.desc()).first()
+            if tx:
+                amount = tx.amount or 0.0
+                paid_date = tx.created_at.strftime('%Y-%m-%d') if tx.created_at else None
+                collected += amount
+        
+        members_data.append({
+            'member_id': member.id,
+            'name': member.name,
+            'phone': member.phone,
+            'email': member.email,
+            'admission_date': member.admission_date.strftime('%Y-%m-%d') if member.admission_date else None,
+            'is_active': member.is_active,
+            'status': p.status,
+            'amount': amount,
+            'paid_date': paid_date
+        })
+    
+    return jsonify({
+        'ok': True,
+        'year': year,
+        'month': month,
+        'paid_count': paid_count,
+        'unpaid_count': unpaid_count,
+        'collected': round(collected, 2),
+        'currency': currency,
+        'members': members_data
+    })
+
+@app.route('/api/fees/unpaid-summary', methods=['GET'])
+@login_required
+def fees_unpaid_summary():
+    now = datetime.now()
+    current_year = now.year
+    current_month = now.month
+    
+    try:
+        monthly_price = float(get_setting('monthly_price') or '8')
+    except Exception:
+        monthly_price = 8.0
+    
+    members = Member.query.all()
+    unpaid_members = []
+    
+    for member in members:
+        # Find all unpaid payments
+        unpaid_payments = Payment.query.filter_by(
+            member_id=member.id,
+            status='Unpaid'
+        ).order_by(Payment.year.desc(), Payment.month.desc()).all()
+        
+        if not unpaid_payments:
+            continue
+        
+        months_unpaid = len(unpaid_payments)
+        total_due = months_unpaid * monthly_price
+        
+        # Find last paid month
+        last_paid = Payment.query.filter_by(
+            member_id=member.id,
+            status='Paid'
+        ).order_by(Payment.year.desc(), Payment.month.desc()).first()
+        
+        last_paid_month = None
+        if last_paid:
+            month_names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+            last_paid_month = f"{month_names[last_paid.month - 1]} {last_paid.year}"
+        
+        unpaid_members.append({
+            'id': member.id,
+            'name': member.name,
+            'phone': member.phone,
+            'last_paid_month': last_paid_month,
+            'months_unpaid': months_unpaid,
+            'total_due': round(total_due, 2)
+        })
+    
+    return jsonify({
+        'ok': True,
+        'members': unpaid_members
+    })
+
+@app.route('/api/member/<int:member_id>/payment-history', methods=['GET'])
+@login_required
+def member_payment_history(member_id):
+    member = db.session.get(Member, member_id)
+    if not member:
+        return jsonify({'ok': False, 'error': 'Member not found'}), 404
+    
+    payments = Payment.query.filter_by(member_id=member_id).order_by(
+        Payment.year.desc(),
+        Payment.month.desc()
+    ).all()
+    
+    # Find last paid month
+    last_paid = None
+    for p in payments:
+        if p.status == 'Paid':
+            month_names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+            last_paid = f"{month_names[p.month - 1]} {p.year}"
+            break    
+    months_unpaid = sum(1 for p in payments if p.status == 'Unpaid')
+    
+    payment_list = []
+    month_names = ['January', 'February', 'March', 'April', 'May', 'June', 
+                   'July', 'August', 'September', 'October', 'November', 'December']
+    
+    for p in payments:
+        amount = None
+        paid_date = None
+        
+        if p.status == 'Paid':
+            tx = PaymentTransaction.query.filter_by(
+                member_id=member.id,
+                year=p.year,
+                month=p.month
+            ).order_by(PaymentTransaction.created_at.desc()).first()
+            if tx:
+                amount = tx.amount
+                paid_date = tx.created_at.strftime('%Y-%m-%d') if tx.created_at else None
+        
+        payment_list.append({
+            'year': p.year,
+            'month': p.month,
+            'month_name': month_names[p.month - 1],
+            'status': p.status,
+            'amount': amount,
+            'paid_date': paid_date
+        })
+    
+    return jsonify({
+        'ok': True,
+        'member': {
+            'id': member.id,
+            'name': member.name,
+            'phone': member.phone,
+            'email': member.email,
+            'cnic': member.cnic,
+            'address': member.address,
+            'gender': member.gender,
+            'date_of_birth': member.date_of_birth.strftime('%Y-%m-%d') if member.date_of_birth else None,
+            'admission_date': member.admission_date.strftime('%Y-%m-%d') if member.admission_date else None,
+            'monthly_price': float(member.monthly_price) if member.monthly_price else 0,
+            'referred_by': member.referred_by,
+            'is_active': member.is_active,
+            'notes': member.notes
+        },
+        'last_paid_month': last_paid,
+        'months_unpaid': months_unpaid,
+        'payments': payment_list,
+        'currency': member.currency or 'PKR'
+    })
+
+@app.route('/api/payment/pay-now', methods=['POST'])
+@login_required
+def api_payment_pay_now():
+    payload = request.get_json(silent=True) or {}
+    try:
+        member_id = int(payload.get('member_id') or 0)
+    except Exception:
+        return jsonify({'ok': False, 'error': 'member_id required'}), 400
+    year = int(payload.get('year') or datetime.now().year)
+    month = int(payload.get('month') or datetime.now().month)
+    method = (payload.get('method') or 'cash').strip()
+
+    member = db.session.get(Member, member_id)
+    if not member:
+        return jsonify({'ok': False, 'error': 'Member not found'}), 404
+
+    # Derive amount
+    amount = None
+    if payload.get('amount') is not None:
+        try:
+            amount = float(payload['amount'])
+        except Exception:
+            amount = None
+    if amount is None:
+        try:
+            mf = getattr(member, 'monthly_fee', None)
+            amount = float(mf) if mf not in (None, '') else None
+        except Exception:
+            amount = None
+    if amount is None:
+        try:
+            amount = float(get_setting('monthly_price') or 0)
+        except Exception:
+            amount = 0.0
+
+    # Ensure monthly Payment exists
+    p = Payment.query.filter_by(member_id=member_id, year=year, month=month).first()
+    if not p:
+        p = Payment(member_id=member_id, year=year, month=month, status='Unpaid')
+        db.session.add(p)
+        db.session.flush()
+
+    # Create transaction
+    try:
+        user_id = session.get('user_id')
+    except Exception:
+        user_id = None
+    tx = PaymentTransaction(
+        member_id=member_id,
+        user_id=user_id,
+        plan_type=getattr(member, 'plan_type', 'monthly') or 'monthly',
+        year=year,
+        month=month,
+        amount=amount,
+        method=method,
+    )
+    db.session.add(tx)
+    p.status = 'Paid'
+    db.session.commit()
+
+    currency = get_setting('currency_code') or 'PKR'
+    return jsonify({
+        'ok': True,
+        'transaction_id': tx.id,
+        'receipt_url': url_for('receipt_view', tx_id=tx.id),
+        'amount': amount,
+        'currency': currency,
+    })
+
+
+@app.route('/api/fees/mark-paid', methods=['POST'])
+@login_required
+def api_fees_mark_paid():
+    """Compatibility endpoint that records payment and returns a receipt URL.
+    Accepts JSON: { member_id, month, year, method?, amount? }
+    """
+    payload = request.get_json(silent=True) or {}
+    try:
+        member_id = int(payload.get('member_id') or 0)
+    except Exception:
+        return jsonify({'ok': False, 'error': 'member_id required'}), 400
+    year = int(payload.get('year') or datetime.now().year)
+    month = int(payload.get('month') or datetime.now().month)
+    method = (payload.get('method') or 'cash').strip()
+
+    member = db.session.get(Member, member_id)
+    if not member:
+        return jsonify({'ok': False, 'error': 'Member not found'}), 404
+
+    # Amount resolve: explicit -> member.monthly_fee -> global monthly_price
+    amount = None
+    if payload.get('amount') is not None:
+        try:
+            amount = float(payload['amount'])
+        except Exception:
+            amount = None
+    if amount is None:
+        try:
+            mf = getattr(member, 'monthly_fee', None)
+            amount = float(mf) if mf not in (None, '') else None
+        except Exception:
+            amount = None
+    if amount is None:
+        try:
+            amount = float(get_setting('monthly_price') or 0)
+        except Exception:
+            amount = 0.0
+
+    # Ensure monthly Payment exists
+    p = Payment.query.filter_by(member_id=member_id, year=year, month=month).first()
+    if not p:
+        p = Payment(member_id=member_id, year=year, month=month, status='Unpaid')
+        db.session.add(p)
+        db.session.flush()
+
+    # Create transaction
+    try:
+        user_id = session.get('user_id')
+    except Exception:
+        user_id = None
+    tx = PaymentTransaction(
+        member_id=member_id,
+        user_id=user_id,
+        plan_type=getattr(member, 'plan_type', 'monthly') or 'monthly',
+        year=year,
+        month=month,
+        amount=amount,
+        method=method,
+    )
+    db.session.add(tx)
+    p.status = 'Paid'
+    db.session.commit()
+
+    currency = get_setting('currency_code') or 'PKR'
+    return jsonify({
+        'ok': True,
+        'message': 'Payment processed and receipt generated.',
+        'transaction_id': tx.id,
+        'receipt_url': url_for('receipt_view', tx_id=tx.id),
+        'amount': amount,
+        'currency': currency,
+    })
+
+
+def _render_receipt_context(tx: PaymentTransaction):
+    member = db.session.get(Member, tx.member_id)
+    gym_name = get_gym_name()
+    currency = get_setting('currency_code') or 'PKR'
+    month_names = ['January', 'February', 'March', 'April', 'May', 'June',
+                   'July', 'August', 'September', 'October', 'November', 'December']
+    month_name = month_names[(tx.month or 1) - 1] if tx.month else '-'
+    return {
+        'gym_name': gym_name,
+        'currency': currency,
+        'tx': tx,
+        'member': member,
+        'month_name': month_name,
+    }
+
+
+@app.route('/receipt/<int:tx_id>')
+@login_required
+def receipt_view(tx_id: int):
+    tx = db.session.get(PaymentTransaction, tx_id)
+    if not tx:
+        return 'Receipt not found', 404
+    ctx = _render_receipt_context(tx)
+    return render_template('receipt.html', **ctx)
+
+
+@app.route('/receipt/member/<int:member_id>/<int:year>/<int:month>')
+@login_required
+def receipt_for_period(member_id: int, year: int, month: int):
+    tx = (
+        PaymentTransaction.query
+        .filter_by(member_id=member_id, year=year, month=month)
+        .order_by(PaymentTransaction.created_at.desc())
+        .first()
+    )
+    if not tx:
+        return 'No receipt for this period', 404
+    ctx = _render_receipt_context(tx)
+    return render_template('receipt.html', **ctx)
+
 def send_whatsapp_template(to_phone: str, template_name: str, lang_code: str = 'en', body_params: list[str] | None = None) -> tuple[bool, str]:
     token = os.getenv('WHATSAPP_TOKEN')
     phone_id = os.getenv('WHATSAPP_PHONE_NUMBER_ID')
@@ -1668,28 +2059,67 @@ def schedule_run_now():
     return jsonify(res), status
 
 def _smart_column_mapper(df_columns):
-    """Automatically map Excel/CSV columns to database fields"""
+    """AI-powered automatic field mapping for Excel/CSV uploads"""
     column_map = {}
     
-    # Column mapping patterns (case-insensitive)
+    # Enhanced column mapping patterns (case-insensitive, multi-language support)
     patterns = {
-        'name': ['name', 'member name', 'full name', 'fullname', 'student name', 'naam', 'نام'],
-        'phone': ['phone', 'mobile', 'contact', 'number', 'phone number', 'mobile number', 'whatsapp', 'contact number', 'رابطہ'],
-        'email': ['email', 'e-mail', 'mail', 'ای میل'],
-        'admission_date': ['admission', 'admission date', 'join date', 'joining date', 'date', 'start date', 'reg date', 'registration date', 'داخلہ'],
-        'plan_type': ['plan', 'plan type', 'subscription', 'package', 'پلان'],
-        'access_tier': ['access', 'tier', 'access tier', 'level', 'رسائی'],
-        'training_type': ['training', 'training type', 'workout', 'workout type', 'تربیت'],
-        'special_tag': ['special', 'special tag', 'vip', 'star', 'خاص'],
+        'name': ['name', 'member name', 'full name', 'fullname', 'student name', 'customer', 'client', 
+                 'naam', 'نام', 'member', 'first name', 'fname', 'last name', 'lname'],
+        'phone': ['phone', 'mobile', 'contact', 'number', 'phone number', 'mobile number', 'whatsapp', 
+                  'contact number', 'cell', 'telephone', 'tel', 'ph', 'رابطہ', 'موبائل'],
+        'email': ['email', 'e-mail', 'mail', 'email address', 'ای میل', 'gmail', 'inbox'],
+        'admission_date': ['admission', 'admission date', 'join date', 'joining date', 'date', 'start date', 
+                          'reg date', 'registration date', 'registered', 'enrolled', 'enroll date', 
+                          'داخلہ', 'تاریخ', 'admission_date', 'joining_date'],
+        'plan_type': ['plan', 'plan type', 'subscription', 'package', 'membership', 'پلان', 
+                      'plan_type', 'subscription_type'],
+        'access_tier': ['access', 'tier', 'access tier', 'level', 'category', 'type', 
+                        'رسائی', 'access_tier'],
+        'training_type': ['training', 'training type', 'workout', 'workout type', 'exercise', 'gym type',
+                         'تربیت', 'training_type', 'workout_type'],
+        'special_tag': ['special', 'special tag', 'vip', 'star', 'premium', 'featured', 
+                       'خاص', 'special_tag', 'vip_member'],
+        'monthly_fee': ['fee', 'monthly fee', 'price', 'amount', 'monthly price', 'monthly_fee', 
+                       'payment', 'cost', 'فیس', 'قیمت'],
+        'cnic': ['cnic', 'id', 'national id', 'identity', 'id card', 'شناختی کارڈ'],
+        'address': ['address', 'location', 'area', 'city', 'پتہ', 'مقام'],
+        'gender': ['gender', 'sex', 'جنس', 'male/female'],
+        'date_of_birth': ['dob', 'date of birth', 'birth date', 'birthday', 'پیدائش'],
+        'referred_by': ['referred', 'referred by', 'referrer', 'reference', 'حوالہ'],
+        'status': ['status', 'member status', 'active', 'is_active', 'active status', 'membership status', 
+                   'حالت', 'صورتحال', 'account status'],
     }
     
     df_cols_lower = {col.lower().strip(): col for col in df_columns}
     
+    # First pass: exact and partial matches
     for field, possible_names in patterns.items():
         for poss in possible_names:
-            if poss in df_cols_lower:
-                column_map[field] = df_cols_lower[poss]
+            poss_lower = poss.lower()
+            # Exact match
+            if poss_lower in df_cols_lower:
+                column_map[field] = df_cols_lower[poss_lower]
                 break
+            # Partial match (column contains pattern)
+            for df_col_lower, original_col in df_cols_lower.items():
+                if poss_lower in df_col_lower or df_col_lower in poss_lower:
+                    if field not in column_map:  # Don't override exact matches
+                        column_map[field] = original_col
+                        break
+    
+    # Second pass: Fuzzy matching for close spellings
+    import difflib
+    for field, possible_names in patterns.items():
+        if field not in column_map:
+            for df_col_lower, original_col in df_cols_lower.items():
+                for poss in possible_names:
+                    # Check similarity ratio (>0.7 means close match)
+                    if difflib.SequenceMatcher(None, poss.lower(), df_col_lower).ratio() > 0.7:
+                        column_map[field] = original_col
+                        break
+                if field in column_map:
+                    break
     
     return column_map
 
@@ -1718,6 +2148,7 @@ def upload_members_csv():
     col_map = _smart_column_mapper(df.columns.tolist())
     
     created = 0
+    updated = 0
     skipped = 0
     errors = []
     
@@ -1733,6 +2164,10 @@ def upload_members_csv():
             training_type = str(row.get(col_map.get('training_type')) or 'standard').lower().strip() if 'training_type' in col_map else 'standard'
             special_tag_raw = str(row.get(col_map.get('special_tag')) or '').strip().lower() if 'special_tag' in col_map else ''
             special_tag = special_tag_raw in ('1','true','yes','y', 'vip', '⭐')
+            
+            # Extract status (is_active) from file
+            status_raw = str(row.get(col_map.get('status')) or 'active').strip().lower() if 'status' in col_map else 'active'
+            is_active = status_raw in ('1', 'true', 'yes', 'y', 'active', 'فعال', 'کا رہے ہیں')
             
             if not name:
                 skipped += 1
@@ -1771,25 +2206,69 @@ def upload_members_csv():
                 existing = Member.query.filter_by(phone=phone).first()
             if not existing and name:
                 existing = Member.query.filter_by(name=name).first()
-            
+
             if existing:
-                skipped += 1
+                # Merge/update existing member with new details
+                changed = False
+                if email and existing.email != email:
+                    existing.email = email
+                    changed = True
+                if training_type and existing.training_type != training_type:
+                    existing.training_type = training_type
+                    changed = True
+                if existing.special_tag != special_tag:
+                    existing.special_tag = special_tag
+                    changed = True
+                if plan_type and existing.plan_type != plan_type:
+                    existing.plan_type = plan_type
+                    changed = True
+                if access_tier and existing.access_tier != access_tier:
+                    existing.access_tier = access_tier
+                    changed = True
+                # Update status/is_active from file
+                if hasattr(existing, 'is_active') and existing.is_active != is_active:
+                    existing.is_active = is_active
+                    changed = True
+                # Only update admission_date if incoming is earlier (preserve earliest)
+                if admission_date and (not existing.admission_date or admission_date < existing.admission_date):
+                    existing.admission_date = admission_date
+                    changed = True
+                if changed:
+                    db.session.commit()
+                    updated += 1
+                else:
+                    skipped += 1
+                # Ensure payment records exist for the admission year
+                adm_year = (existing.admission_date or admission_date).year
+                for mm in range(1, 12 + 1):
+                    p = Payment.query.filter_by(member_id=existing.id, year=adm_year, month=mm).first()
+                    if not p:
+                        status = "N/A" if datetime(adm_year, mm, 1).date() < (existing.admission_date or admission_date) else "Unpaid"
+                        db.session.add(Payment(member_id=existing.id, year=adm_year, month=mm, status=status))
+                db.session.commit()
                 continue
+
+            # Create new member
+            member_data = {
+                'name': name,
+                'phone': phone,
+                'email': email or None,
+                'training_type': training_type,
+                'special_tag': special_tag,
+                'admission_date': admission_date,
+                'plan_type': plan_type,
+                'access_tier': access_tier,
+                'referral_code': _gen_referral_code()
+            }
             
-            m = Member(
-                name=name, 
-                phone=phone, 
-                email=email or None, 
-                training_type=training_type, 
-                special_tag=special_tag, 
-                admission_date=admission_date, 
-                plan_type=plan_type, 
-                access_tier=access_tier, 
-                referral_code=_gen_referral_code()
-            )
+            # Add is_active if Member model has this field
+            if hasattr(Member, 'is_active'):
+                member_data['is_active'] = is_active
+                
+            m = Member(**member_data)
             db.session.add(m)
             db.session.commit()
-            
+
             # Create payment records
             for mm in range(1, 12 + 1):
                 status = "N/A" if datetime(admission_date.year, mm, 1).date() < admission_date else "Unpaid"
@@ -1802,11 +2281,21 @@ def upload_members_csv():
             skipped += 1
             continue
     
+    # Enhanced AI detection response
+    detection_quality = len(col_map) / 8.0  # Score based on how many of 8 core fields detected
     response = {
-        "ok": True, 
-        "created": created, 
+        "ok": True,
+        "created": created,
+        "updated": updated,
         "skipped": skipped,
-        "columns_detected": col_map
+        "ai_detection": {
+            "columns_detected": col_map,
+            "detection_quality": round(detection_quality * 100, 1),  # Percentage
+            "total_columns": len(df.columns),
+            "mapped_columns": len(col_map),
+            "unmapped_columns": [col for col in df.columns if col not in col_map.values()],
+            "confidence": "high" if detection_quality >= 0.75 else "medium" if detection_quality >= 0.5 else "low"
+        }
     }
     if errors and len(errors) <= 5:
         response['errors'] = errors
@@ -1861,6 +2350,7 @@ def send_bulk_text_reminders(year: int, month: int) -> dict:
     price = (get_setting('monthly_price') or '8')
     currency = (get_setting('currency_code') or 'USD')
     gym = get_gym_name()
+    default_msg = f"Hi {member.name}, your {gym} fee ({price} {currency}) for {month}/{year} may be due. Please pay if pending."
     for p in unpaid:
         member = db.session.get(Member, p.member_id)
         if not member:
@@ -2197,7 +2687,6 @@ def whatsapp_test():
 
 
 @app.route('/admin/whatsapp/status', methods=['GET'])
-@admin_required
 def whatsapp_status():
     token_present = bool(os.getenv('WHATSAPP_TOKEN'))
     phone_id_present = bool(os.getenv('WHATSAPP_PHONE_NUMBER_ID'))
@@ -2383,6 +2872,29 @@ def admin_settings_general():
         set_setting('whatsapp_default_country_code', code or '92')  # type: ignore[name-defined]
     append_audit('settings.general', {'user_id': session.get('user_id')})
     return jsonify({'ok': True})
+
+@app.route('/admin/settings/reminders', methods=['GET', 'POST'])
+@admin_required
+def admin_settings_reminders():
+    if request.method == 'GET':
+        enabled = get_setting('reminder_enabled') or '0'
+        hour = get_setting('reminder_hour') or '9'
+        minute = get_setting('reminder_minute') or '0'
+        return jsonify({
+            'ok': True,
+            'enabled': enabled in ('1', 'true', 'True'),
+            'hour': int(hour),
+            'minute': int(minute)
+        })
+    data = request.get_json(silent=True) or {}
+    if 'enabled' in data:
+        set_setting('reminder_enabled', '1' if data.get('enabled') else '0')
+    if 'hour' in data:
+        set_setting('reminder_hour', str(int(data.get('hour', 9))))
+    if 'minute' in data:
+        set_setting('reminder_minute', str(int(data.get('minute', 0))))
+    append_audit('settings.reminders', {'user_id': session.get('user_id')})
+    return jsonify({'ok': True, 'message': 'Reminder settings saved. Restart server to apply schedule.'})
 
 @app.route('/admin/audit/verify', methods=['GET'])
 @admin_required
@@ -2615,9 +3127,3 @@ def system_reset():
             'ok': False,
             'error': f'Reset failed: {str(e)}'
         }), 500
-
-if __name__ == '__main__':
-    with app.app_context():
-        db.create_all()
-        _ensure_schema()
-    app.run(host='0.0.0.0', port=5000, debug=False)

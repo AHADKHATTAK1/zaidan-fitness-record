@@ -223,6 +223,40 @@
       </div>
     </div>
 
+    <!-- Pay Confirmation Modal -->
+    <div class="modal fade" id="payModal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog">
+        <div class="modal-content bg-dark text-light border border-success">
+          <div class="modal-header">
+            <h5 class="modal-title"><i class="bi bi-cash-coin"></i> Confirm Payment</h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <div class="mb-3">
+              <label class="form-label">Payment Method</label>
+              <select id="payMethod" class="form-select">
+                <option value="cash" selected>Cash</option>
+                <option value="bank">Bank</option>
+                <option value="online">Online</option>
+              </select>
+              <div class="form-text">Choose how the member paid.</div>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Amount</label>
+              <input id="payAmount" type="number" min="0" step="0.01" class="form-control" placeholder="Leave blank to use default" />
+              <div class="form-text">Blank uses member fee or gym monthly price.</div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-outline-light" data-bs-dismiss="modal">Cancel</button>
+            <button id="payConfirmBtn" class="btn btn-success" data-member-id="" data-year="" data-month="">Confirm & Slip</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="toastArea" class="toast-container position-fixed bottom-0 end-0 p-3"></div>
+
     <script>
       const CURRENCY = '{{ currency_code }}';
       // Theme toggle wiring
@@ -287,9 +321,13 @@
           tr.innerHTML = `<td>${r.member.serial}</td><td>${
             r.member.name
           }</td><td>${flag} ${phoneRaw}</td>
-            <td><button class="btn btn-sm btn-outline-success" onclick="remindSingle(${\
-              r.member.id\
-            })">Remind</button></td>`;
+            <td>
+              <button class="btn btn-sm btn-outline-success" onclick="remindSingle(${\
+                r.member.id\
+              })">Remind</button>
+              <button class="btn btn-sm btn-success ms-1" onclick="openPayModal(${\
+                r.member.id}, ${y}, ${m})"><i class="bi bi-cash-coin"></i> Pay & Slip</button>
+            </td>`;
           upT.appendChild(tr);
         });
         paid.forEach((r) => {
@@ -369,6 +407,98 @@
           .then(reg => console.log('SW registered'))
           .catch(err => console.log('SW failed:', err));
       }
+
+      // Payment Modal Functions
+      let payModalInstance;
+      function openPayModal(memberId, year, month, amount){
+        const modalEl = document.getElementById('payModal');
+        if(!payModalInstance){
+          payModalInstance = new bootstrap.Modal(modalEl);
+        }
+        const btn = document.getElementById('payConfirmBtn');
+        btn.dataset.memberId = String(memberId);
+        btn.dataset.year = String(year);
+        btn.dataset.month = String(month);
+        document.getElementById('payMethod').value = 'cash';
+        const amtEl = document.getElementById('payAmount');
+        amtEl.value = amount != null && amount !== '' ? String(amount) : '';
+        payModalInstance.show();
+      }
+
+      function showToast(message, type) {
+        try {
+          const area = document.getElementById('toastArea');
+          const level = (type || 'success').toLowerCase();
+          const cls = level === 'success' ? 'text-bg-success' : level === 'warning' ? 'text-bg-warning' : level === 'info' ? 'text-bg-info' : 'text-bg-danger';
+          const el = document.createElement('div');
+          el.className = `toast align-items-center ${cls} border-0`;
+          el.setAttribute('role', 'alert');
+          el.setAttribute('aria-live', 'assertive');
+          el.setAttribute('aria-atomic', 'true');
+          el.innerHTML = `<div class="d-flex"><div class="toast-body">${message}</div><button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button></div>`;
+          area.appendChild(el);
+          const t = new bootstrap.Toast(el, { delay: 3500 });
+          t.show();
+          el.addEventListener('hidden.bs.toast', () => el.remove());
+        } catch (e) {
+          alert(message);
+        }
+      }
+
+      function setLoading(btn, loading, label){
+        if (!btn) return;
+        if (loading){
+          btn.disabled = true;
+          btn.dataset.label = btn.innerHTML;
+          btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>' + (label || 'Working…');
+        } else {
+          btn.disabled = false;
+          if (btn.dataset.label) btn.innerHTML = btn.dataset.label;
+        }
+      }
+
+      (function(){
+        const btn = document.getElementById('payConfirmBtn');
+        if(!btn) return;
+        btn.addEventListener('click', async function(){
+          const memberId = parseInt(this.dataset.memberId || '0');
+          const year = parseInt(this.dataset.year || '0');
+          const month = parseInt(this.dataset.month || '0');
+          const method = (document.getElementById('payMethod').value || 'cash');
+          const amtStr = document.getElementById('payAmount').value;
+          const amount = amtStr.trim() === '' ? undefined : parseFloat(amtStr);
+          if(!memberId || !year || !month){
+            showToast('Missing details for payment', 'danger');
+            return;
+          }
+          try{
+            setLoading(btn, true, 'Processing…');
+            const payload = { member_id: memberId, year, month, method };
+            if(typeof amount === 'number' && !Number.isNaN(amount)) payload.amount = amount;
+            const res = await fetch('/api/payment/pay-now', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload)
+            });
+            let data = null;
+            try { data = await res.json(); } catch {}
+            if(res.ok && data && data.ok){
+              showToast('Payment recorded. Opening receipt…', 'success');
+              const url = data.receipt_url || `/receipt/member/${memberId}/${year}/${month}`;
+              try { payModalInstance?.hide(); } catch {}
+              window.open(url, '_blank');
+              refreshAll();
+            } else {
+              const msg = data && data.error ? data.error : `HTTP ${res.status}`;
+              showToast('Payment failed: ' + msg, 'danger');
+            }
+          } catch(e){
+            showToast('Error processing payment', 'danger');
+          } finally {
+            setLoading(btn, false);
+          }
+        });
+      })();
     </script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
   </body>
