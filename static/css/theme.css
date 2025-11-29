@@ -1,3 +1,8 @@
+.kpi-delay-0 { --d: 0s; }
+.kpi-delay-05 { --d: 0.05s; }
+.kpi-delay-1 { --d: 0.1s; }
+.kpi-delay-15 { --d: 0.15s; }
+.d-none { display: none !important; }
 /* -------------------------------------------------------
    PREMIUM POS UI THEME
    Palette: Mint Green & White (Visible & Modern)
