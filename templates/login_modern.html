@@ -43,6 +43,7 @@
         background: rgba(241, 242, 246, 0.85);
         border: 1px solid var(--border-grey);
         box-shadow: 0 25px 55px rgba(45, 52, 54, 0.15);
+        -webkit-backdrop-filter: blur(28px) saturate(140%);
         backdrop-filter: blur(28px) saturate(140%);
       }
       .brand-mark {
@@ -121,15 +122,18 @@
       .onboarding-card h5 {
         font-size: 1rem;
       }
+      #onboarding.d-none {
+        display: none;
+      }
     </style>
   </head>
   <body>
     <div class="login-shell">
       <div class="text-center mb-4">
-        <div class="brand-mark">{{ gym_name }}</div>
+      <div id="onboarding" class="onboarding-card d-none">
         <p class="muted-note">Modern POS + Member Suite</p>
       </div>
-      <div id="onboarding" class="onboarding-card" style="display: none">
+      <div id="onboarding" class="onboarding-card d-none">
         <div class="d-flex justify-content-between align-items-center mb-3">
           <h5 class="mb-0">Quick Setup</h5>
           <button
@@ -301,7 +305,7 @@
     <script>
       async function loadOnboarding() {
         try {
-          const r = await fetch('/onboarding/status');
+            document.getElementById('onboarding').classList.remove('d-none');
           const j = await r.json();
           if (j.needed) {
             document.getElementById('onboarding').style.display = '';
@@ -346,25 +350,28 @@
         });
         location.reload();
       }
-      loadOnboarding();
+        loadOnboarding();
+      </script>
       {% if google_ready %}
-      window.handleCredentialResponse = async function (resp) {
-        try {
-          const res = await fetch('/auth/google/verify', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ credential: resp.credential }),
-          });
-          const data = await res.json();
-          if (data.ok) {
-            window.location.href = '/dashboard';
-          } else {
-            alert('Google sign-in failed: ' + (data.error || 'unknown'));
+      <script>
+        window.handleCredentialResponse = async function (resp) {
+          try {
+            const res = await fetch('/auth/google/verify', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ credential: resp.credential }),
+            });
+            const data = await res.json();
+            if (data.osk) {
+              window.location.href = '/dashboard';
+            } else {
+              alert('Google sign-in failed: ' + (data.error || 'unknown'));
+            }
+          } catch (err) {
+            alert('Google login error');
           }
-        } catch (err) {
-          alert('Google login error');
-        }
-      };
+        };
+      </script>
       {% endif %}
     </script>
   </body>

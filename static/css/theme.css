@@ -472,7 +472,6 @@ body {
   /* Responsive tables */
   .table-responsive {
     overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
   }
   
   /* Form inputs */
@@ -506,6 +505,7 @@ body {
 @media all and (display-mode: standalone) {
   /* App is installed as PWA */
   body {
+    -webkit-user-select: none;
     user-select: none; /* Prevent text selection for app feel */
     -webkit-touch-callout: none;
   }
@@ -597,6 +597,11 @@ a[href*="/fees"] {
   font-size: 1.05rem;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+}
+
+/* Utility Classes */
+.hidden {
+  display: none !important;
 }
 
 /* Responsive Design */

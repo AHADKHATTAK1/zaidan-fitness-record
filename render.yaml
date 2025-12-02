@@ -20,7 +20,7 @@ services:
       - key: SMTP_PASSWORD
         sync: false
       - key: BACKUP_TO_EMAIL
-        value: true
+        value: "true"
       - key: WHATSAPP_DEFAULT_COUNTRY_CODE
         value: 92
     disk:

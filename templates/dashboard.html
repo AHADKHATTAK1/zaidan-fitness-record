@@ -1,16 +1,24 @@
-}
 <!DOCTYPE html>
 <html lang="en" data-bs-theme="dark">
   <head>              
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content="Premium Gym Management & POS System" />
-    <meta name="theme-color" content="#00C46C" />
+    <meta name="color-scheme" content="light dark">
+    <!-- CSS for theme colors - compatible with all browsers -->
+    <style>
+      html, body {
+        background-color: #00C46C;
+      }
+      @media (prefers-color-scheme: dark) {
+        html, body {
+          background-color: #22292f !important;
+        }
+      }
+    </style>
+    <meta name="msapplication-TileColor" content="#00C46C" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
-    <meta
-      name="apple-mobile-web-app-status-bar-style"
-      content="black-translucent"
-    />
     <link rel="icon" type="image/png" href="{{ logo_url or '/static/favicon.png' }}" />
     <link rel="apple-touch-icon" href="{{ logo_url or '/static/favicon.png' }}" />
     <link rel="manifest" href="/manifest.json" />
@@ -726,6 +734,7 @@
                 <h6 class="mb-0"><i class="bi bi-calendar-check"></i> Membership Details</h6>
               </div>
               <div class="card-body">
+                <div id="admissionMonthPaidStatus" class="mb-3"></div>
                 <div class="row g-3">
                   <div class="col-md-3">
                     <small class="text-muted">Admission Date</small>
@@ -1840,6 +1849,40 @@
                   var timeline = document.getElementById('memberTimeline');
                   if (data.payments && data.payments.length > 0) {
                     var html = '';
+                    // Admission month highlight
+                    var admissionMonth = null;
+                    var admissionPaid = false;
+                    var admissionPayment = null;
+                    if (m.admission_date) {
+                      var ad = new Date(m.admission_date);
+                      var adMonth = ad.getMonth() + 1;
+                      var adYear = ad.getFullYear();
+                      for (var i = 0; i < data.payments.length; i++) {
+                        var p = data.payments[i];
+                        if (p.month === adMonth && p.year === adYear) {
+                          admissionMonth = p;
+                          admissionPaid = (p.status === 'Paid');
+                          admissionPayment = p;
+                          break;
+                        }
+                      }
+                    }
+                    var admissionStatusDiv = document.getElementById('admissionMonthPaidStatus');
+                    if (admissionMonth) {
+                      var badgeClass = admissionPaid ? 'bg-success' : 'bg-danger';
+                      var badgeText = admissionPaid ? 'Paid' : 'Unpaid';
+                      var remainderTag = '';
+                      if (!admissionPaid) {
+                        remainderTag = '<span class="badge bg-warning text-dark ms-2">Remainder Fee</span>';
+                      }
+                      var btn = '';
+                      if (!admissionPaid) {
+                        btn = '<button class="btn btn-sm btn-outline-success ms-3" onclick="markFeePaid(' + memberId + ',' + admissionMonth.month + ',' + admissionMonth.year + ',' + '\'Paid\'' + ')">Mark Paid</button>';
+                      }
+                      admissionStatusDiv.innerHTML = '<span class="badge ' + badgeClass + ' fs-5 px-4 py-2">Admission Month: ' + admissionMonth.month_name + ' ' + admissionMonth.year + ' - ' + badgeText + '</span>' + remainderTag + btn;
+                    } else {
+                      admissionStatusDiv.innerHTML = '';
+                    }
                     for (var i = 0; i < data.payments.length; i++) {
                       var p = data.payments[i];
                       var badgeClass = 'bg-secondary';
@@ -1860,316 +1903,56 @@
                   } else {
                     timeline.innerHTML = '<div class="text-center py-3">No payment history</div>';
                   }
+                } else {
+                  // Error: member not found or backend error
+                  document.getElementById('detailName').textContent = '-';
+                  document.getElementById('detailPhone').textContent = '-';
+                  document.getElementById('detailEmail').textContent = '-';
+                  document.getElementById('detailCNIC').textContent = '-';
+                  document.getElementById('detailAddress').textContent = '-';
+                  document.getElementById('detailGender').textContent = '-';
+                  document.getElementById('detailDOB').textContent = '-';
+                  document.getElementById('detailAdmission').textContent = '-';
+                  document.getElementById('detailMonthlyFee').textContent = '-';
+                  document.getElementById('detailReferred').textContent = '-';
+                  document.getElementById('detailStatus').innerHTML = '<span class="badge bg-danger">Error</span>';
+                  document.getElementById('detailNotes').textContent = 'Unable to load member details.';
+                  document.getElementById('detailTotalPaid').textContent = '-';
+                  document.getElementById('detailTotalDue').textContent = '-';
+                  document.getElementById('memberLastPaid').textContent = '-';
+                  document.getElementById('memberUnpaidCount').textContent = '-';
+                  document.getElementById('memberTimeline').innerHTML = '<div class="text-center text-danger">Error loading member details. Member may not exist.</div>';
                 }
-              } else {
-                // Error: member not found or backend error
-                document.getElementById('detailName').textContent = '-';
-                document.getElementById('detailPhone').textContent = '-';
-                document.getElementById('detailEmail').textContent = '-';
-                document.getElementById('detailCNIC').textContent = '-';
-                document.getElementById('detailAddress').textContent = '-';
-                document.getElementById('detailGender').textContent = '-';
-                document.getElementById('detailDOB').textContent = '-';
-                document.getElementById('detailAdmission').textContent = '-';
-                document.getElementById('detailMonthlyFee').textContent = '-';
-                document.getElementById('detailReferred').textContent = '-';
-                document.getElementById('detailStatus').innerHTML = '<span class="badge bg-danger">Error</span>';
-                document.getElementById('detailNotes').textContent = 'Unable to load member details.';
-                document.getElementById('detailTotalPaid').textContent = '-';
-                document.getElementById('detailTotalDue').textContent = '-';
-                document.getElementById('memberLastPaid').textContent = '-';
-                document.getElementById('memberUnpaidCount').textContent = '-';
-                document.getElementById('memberTimeline').innerHTML = '<div class="text-center text-danger">Error loading member details. Member may not exist.</div>';
-              }
                 // Always show the modal
-                if (typeof memberDetailModal !== 'undefined' && memberDetailModal && typeof memberDetailModal.show === 'function') {
-      try {
-        const res = await fetch('/api/member/' + memberId + '/payment-history');
-        const data = await res.json();
-        let m = null;
-        if (data.ok) {
-          m = data.member;
-          window.currentMemberId = memberId;
-          // Personal Information
-          document.getElementById('detailName').textContent = m.name || '-';
-          document.getElementById('detailPhone').textContent = m.phone || '-';
-          document.getElementById('detailEmail').textContent = m.email || '-';
-          document.getElementById('detailCNIC').textContent = m.cnic || '-';
-          document.getElementById('detailAddress').textContent = m.address || '-';
-          document.getElementById('detailGender').textContent = m.gender || '-';
-          document.getElementById('detailDOB').textContent = m.date_of_birth || '-';
-          // Membership Details
-          document.getElementById('detailAdmission').textContent = m.admission_date || '-';
-          document.getElementById('detailMonthlyFee').textContent = m.monthly_price ? ((data.currency || 'PKR') + ' ' + m.monthly_price.toLocaleString()) : '-';
-          document.getElementById('detailReferred').textContent = m.referred_by || '-';
-          document.getElementById('detailStatus').innerHTML = m.is_active ? '<span class="badge bg-success">Active</span>' : '<span class="badge bg-secondary">Inactive</span>';
-          document.getElementById('detailNotes').textContent = m.notes || 'No notes';
-          // Payment Statistics
-          var paidPayments = data.payments.filter(function(p){return p.status === 'Paid';});
-          var unpaidPayments = data.payments.filter(function(p){return p.status === 'Unpaid';});
-          var totalPaid = paidPayments.reduce(function(sum, p){return sum + (p.amount || 0);}, 0);
-          var totalDue = unpaidPayments.length * (m.monthly_price || 0);
-          document.getElementById('detailTotalPaid').textContent = (data.currency || 'PKR') + ' ' + totalPaid.toLocaleString();
-          document.getElementById('detailTotalDue').textContent = (data.currency || 'PKR') + ' ' + totalDue.toLocaleString();
-          document.getElementById('memberLastPaid').textContent = data.last_paid_month || 'Never paid';
-          document.getElementById('memberUnpaidCount').textContent = data.months_unpaid || 0;
-          // Payment Timeline
-          var timeline = document.getElementById('memberTimeline');
-          if (data.payments && data.payments.length > 0) {
-            var html = '';
-            for (var i = 0; i < data.payments.length; i++) {
-              var p = data.payments[i];
-              html += '<div class="list-group-item list-group-item-action bg-dark border-secondary">';
-              html += '<div class="d-flex w-100 justify-content-between">';
-              html += '<h6 class="mb-1">' + p.month_name + ' ' + p.year + '</h6>';
-              var badgeClass = 'secondary';
-              if (p.status === 'Paid') badgeClass = 'success';
-              else if (p.status === 'Unpaid') badgeClass = 'warning';
-              html += '<span class="badge text-bg-' + badgeClass + '">' + p.status + '</span>';
-              html += '</div>';
-              html += '<p class="mb-1">Amount: <strong>' + (p.amount ? p.amount.toLocaleString() : '-') + ' ' + (data.currency || 'PKR') + '</strong></p>';
-              if (p.paid_date) html += '<small class="text-muted">Paid on: ' + p.paid_date + '</small>';
-              html += '</div>';
-            }
-            timeline.innerHTML = html;
+          if (typeof memberDetailModal !== 'undefined' && memberDetailModal && typeof memberDetailModal.show === 'function') {
+            memberDetailModal.show();
           } else {
-            timeline.innerHTML = '<div class="text-center py-3">No payment history</div>';
+            var modal = new bootstrap.Modal(document.getElementById('memberDetailModal'));
+            modal.show();
           }
-        } else {
-          // Error: member not found or backend error
-          document.getElementById('detailName').textContent = '-';
-          document.getElementById('detailPhone').textContent = '-';
-          document.getElementById('detailEmail').textContent = '-';
-          document.getElementById('detailCNIC').textContent = '-';
-          document.getElementById('detailAddress').textContent = '-';
-          document.getElementById('detailGender').textContent = '-';
-          document.getElementById('detailDOB').textContent = '-';
-          document.getElementById('detailAdmission').textContent = '-';
-          document.getElementById('detailMonthlyFee').textContent = '-';
-          document.getElementById('detailReferred').textContent = '-';
-          document.getElementById('detailStatus').innerHTML = '<span class="badge bg-danger">Error</span>';
-          document.getElementById('detailNotes').textContent = 'Unable to load member details.';
-          document.getElementById('detailTotalPaid').textContent = '-';
-          document.getElementById('detailTotalDue').textContent = '-';
-          document.getElementById('memberLastPaid').textContent = '-';
-          document.getElementById('memberUnpaidCount').textContent = '-';
+        } catch(e){
+          // Handle fetch or other errors
           document.getElementById('memberTimeline').innerHTML = '<div class="text-center text-danger">Error loading member details. Member may not exist.</div>';
-        }
-        // Always show the modal
-        if (typeof memberDetailModal !== 'undefined' && memberDetailModal && typeof memberDetailModal.show === 'function') {
-          memberDetailModal.show();
-        } else {
-          var modal = new bootstrap.Modal(document.getElementById('memberDetailModal'));
-          modal.show();
-        }
-      } catch (e) {
-        // Network or unexpected error
-        document.getElementById('detailName').textContent = '-';
-        document.getElementById('detailPhone').textContent = '-';
-        document.getElementById('detailEmail').textContent = '-';
-        document.getElementById('detailCNIC').textContent = '-';
-        document.getElementById('detailAddress').textContent = '-';
-        document.getElementById('detailGender').textContent = '-';
-        document.getElementById('detailDOB').textContent = '-';
-        document.getElementById('detailAdmission').textContent = '-';
-        document.getElementById('detailMonthlyFee').textContent = '-';
-        document.getElementById('detailReferred').textContent = '-';
-        document.getElementById('detailStatus').innerHTML = '<span class="badge bg-danger">Error</span>';
-        document.getElementById('detailNotes').textContent = 'Unable to load member details.';
-        document.getElementById('detailTotalPaid').textContent = '-';
-        document.getElementById('detailTotalDue').textContent = '-';
-        document.getElementById('memberLastPaid').textContent = '-';
-        document.getElementById('memberUnpaidCount').textContent = '-';
-        document.getElementById('memberTimeline').innerHTML = '<div class="text-center text-danger">Error loading member details. Please try again.</div>';
-        if (typeof memberDetailModal !== 'undefined' && memberDetailModal && typeof memberDetailModal.show === 'function') {
-          memberDetailModal.show();
-        } else {
-          var modal = new bootstrap.Modal(document.getElementById('memberDetailModal'));
-          modal.show();
-        }
-      }
-                      document.getElementById('detailReferred').textContent = m.referred_by || '-';
-                      document.getElementById('detailStatus').innerHTML = m.is_active ? '<span class="badge bg-success">Active</span>' : '<span class="badge bg-secondary">Inactive</span>';
-                      document.getElementById('detailNotes').textContent = m.notes || 'No notes';
-                      var paidPayments = data.payments.filter(function(p){return p.status === 'Paid';});
-                      var unpaidPayments = data.payments.filter(function(p){return p.status === 'Unpaid';});
-                      var totalPaid = paidPayments.reduce(function(sum, p){return sum + (p.amount || 0);}, 0);
-                      var totalDue = unpaidPayments.length * (m.monthly_price || 0);
-                      document.getElementById('detailTotalPaid').textContent = (data.currency || 'PKR') + ' ' + totalPaid.toLocaleString();
-                      document.getElementById('detailTotalDue').textContent = (data.currency || 'PKR') + ' ' + totalDue.toLocaleString();
-                      document.getElementById('memberLastPaid').textContent = data.last_paid_month || 'Never paid';
-                      document.getElementById('memberUnpaidCount').textContent = data.months_unpaid || 0;
-                      var timeline = document.getElementById('memberTimeline');
-                      if (data.payments && data.payments.length > 0) {
-                        var html = '';
-                        for (var i = 0; i < data.payments.length; i++) {
-                          var p = data.payments[i];
-                          html += '<div class="list-group-item list-group-item-action bg-dark border-secondary">';
-                          html += '<div class="d-flex w-100 justify-content-between">';
-                          html += '<h6 class="mb-1">' + p.month_name + ' ' + p.year + '</h6>';
-                          var badgeClass = 'secondary';
-                          if (p.status === 'Paid') badgeClass = 'success';
-                          else if (p.status === 'Unpaid') badgeClass = 'warning';
-                          html += '<span class="badge text-bg-' + badgeClass + '">' + p.status + '</span>';
-                          html += '</div>';
-                          html += '<p class="mb-1">Amount: <strong>' + (p.amount ? p.amount.toLocaleString() : '-') + ' ' + (data.currency || 'PKR') + '</strong></p>';
-                          if (p.paid_date) html += '<small class="text-muted">Paid on: ' + p.paid_date + '</small>';
-                          html += '</div>';
-                        }
-                        timeline.innerHTML = html;
-                      } else {
-                        timeline.innerHTML = '<div class="text-center py-3">No payment history</div>';
-                      }
-                    } else {
-                      document.getElementById('detailName').textContent = '-';
-                      document.getElementById('detailPhone').textContent = '-';
-                      document.getElementById('detailEmail').textContent = '-';
-                      document.getElementById('detailCNIC').textContent = '-';
-                      document.getElementById('detailAddress').textContent = '-';
-                      document.getElementById('detailGender').textContent = '-';
-                      document.getElementById('detailDOB').textContent = '-';
-                      document.getElementById('detailAdmission').textContent = '-';
-                      document.getElementById('detailMonthlyFee').textContent = '-';
-                      document.getElementById('detailReferred').textContent = '-';
-                      document.getElementById('detailStatus').innerHTML = '<span class="badge bg-danger">Error</span>';
-                      document.getElementById('detailNotes').textContent = 'Unable to load member details.';
-                      document.getElementById('detailTotalPaid').textContent = '-';
-                      document.getElementById('detailTotalDue').textContent = '-';
-                      document.getElementById('memberLastPaid').textContent = '-';
-                      document.getElementById('memberUnpaidCount').textContent = '-';
-                      document.getElementById('memberTimeline').innerHTML = '<div class="text-center text-danger">Error loading member details. Member may not exist.</div>';
-                    }
-                    if (typeof memberDetailModal !== 'undefined' && memberDetailModal && typeof memberDetailModal.show === 'function') {
-                      memberDetailModal.show();
-                    } else {
-                      var modal = new bootstrap.Modal(document.getElementById('memberDetailModal'));
-                      modal.show();
-                    }
-// Removed duplicate error handling block
-    var table = document.getElementById(tableId);
-    var rows = table.querySelectorAll('tr');
-    var csv = '';
-    rows.forEach(function(row) {
-      var cols = row.querySelectorAll('th,td');
-      var rowData = [];
-                try {
-                  const res = await fetch('/api/member/' + memberId + '/payment-history');
-                  const data = await res.json();
-                  let m = null;
-                  if (data.ok) {
-                    m = data.member;
-                    window.currentMemberId = memberId;
-                    // Personal Information
-                    document.getElementById('detailName').textContent = m.name || '-';
-                    document.getElementById('detailPhone').textContent = m.phone || '-';
-                    document.getElementById('detailEmail').textContent = m.email || '-';
-                    document.getElementById('detailCNIC').textContent = m.cnic || '-';
-                    document.getElementById('detailAddress').textContent = m.address || '-';
-                    document.getElementById('detailGender').textContent = m.gender || '-';
-                    document.getElementById('detailDOB').textContent = m.date_of_birth || '-';
-                    // Membership Details
-                    document.getElementById('detailAdmission').textContent = m.admission_date || '-';
-                    document.getElementById('detailMonthlyFee').textContent = m.monthly_price ? ((data.currency || 'PKR') + ' ' + m.monthly_price.toLocaleString()) : '-';
-                    document.getElementById('detailReferred').textContent = m.referred_by || '-';
-                    document.getElementById('detailStatus').innerHTML = m.is_active ? '<span class="badge bg-success">Active</span>' : '<span class="badge bg-secondary">Inactive</span>';
-                    document.getElementById('detailNotes').textContent = m.notes || 'No notes';
-                    // Payment Statistics
-                    var paidPayments = data.payments.filter(function(p){return p.status === 'Paid';});
-                    var unpaidPayments = data.payments.filter(function(p){return p.status === 'Unpaid';});
-                    var totalPaid = paidPayments.reduce(function(sum, p){return sum + (p.amount || 0);}, 0);
-                    var totalDue = unpaidPayments.length * (m.monthly_price || 0);
-                    document.getElementById('detailTotalPaid').textContent = (data.currency || 'PKR') + ' ' + totalPaid.toLocaleString();
-                    document.getElementById('detailTotalDue').textContent = (data.currency || 'PKR') + ' ' + totalDue.toLocaleString();
-                    document.getElementById('memberLastPaid').textContent = data.last_paid_month || 'Never paid';
-                    document.getElementById('memberUnpaidCount').textContent = data.months_unpaid || 0;
-                    // Payment Timeline
-                    var timeline = document.getElementById('memberTimeline');
-                    if (data.payments && data.payments.length > 0) {
-                      var html = '';
-                      for (var i = 0; i < data.payments.length; i++) {
-                        var p = data.payments[i];
-                        var badgeClass = 'bg-secondary';
-                        var textClass = 'text-light';
-                        if (p.status === 'Paid') { badgeClass = 'bg-success'; textClass = 'text-white'; }
-                        else if (p.status === 'Unpaid') { badgeClass = 'bg-danger'; textClass = 'text-white'; }
-                        html += '<div class="list-group-item list-group-item-action bg-dark border-secondary py-3">';
-                        html += '<div class="d-flex w-100 justify-content-between align-items-center">';
-                        html += '<h6 class="mb-1">' + p.month_name + ' ' + p.year + '</h6>';
-                        html += '<span class="badge ' + badgeClass + ' ' + textClass + ' fs-5 px-4 py-2">' + p.status + '</span>';
-                        html += '<button class="btn btn-sm ms-3 ' + (p.status === 'Paid' ? 'btn-outline-danger' : 'btn-outline-success') + '" onclick="markFeePaid(' + memberId + ',' + p.month + ',' + p.year + ',' + (p.status === 'Paid' ? '\'Unpaid\'' : '\'Paid\'') + ')">' + (p.status === 'Paid' ? 'Mark Unpaid' : 'Mark Paid') + '</button>';
-                        html += '</div>';
-                        html += '<p class="mb-1">Amount: <strong>' + (p.amount ? p.amount.toLocaleString() : '-') + ' ' + (data.currency || 'PKR') + '</strong></p>';
-                        if (p.paid_date) html += '<small class="text-muted">Paid on: ' + p.paid_date + '</small>';
-                        html += '</div>';
-                      }
-                      timeline.innerHTML = html;
-                    } else {
-                      timeline.innerHTML = '<div class="text-center py-3">No payment history</div>';
-                    }
-                  } else {
-                    // Error: member not found or backend error
-                    document.getElementById('detailName').textContent = '-';
-                    document.getElementById('detailPhone').textContent = '-';
-                    document.getElementById('detailEmail').textContent = '-';
-                    document.getElementById('detailCNIC').textContent = '-';
-                    document.getElementById('detailAddress').textContent = '-';
-                    document.getElementById('detailGender').textContent = '-';
-                    document.getElementById('detailDOB').textContent = '-';
-                    document.getElementById('detailAdmission').textContent = '-';
-                    document.getElementById('detailMonthlyFee').textContent = '-';
-                    document.getElementById('detailReferred').textContent = '-';
-                    document.getElementById('detailStatus').innerHTML = '<span class="badge bg-danger">Error</span>';
-                    document.getElementById('detailNotes').textContent = 'Unable to load member details.';
-                    document.getElementById('detailTotalPaid').textContent = '-';
-                    document.getElementById('detailTotalDue').textContent = '-';
-                    document.getElementById('memberLastPaid').textContent = '-';
-                    document.getElementById('memberUnpaidCount').textContent = '-';
-                  }
-                } catch(e) {
-                  showToast('Error loading member details', 'danger');
-                }
-      }
-      async function driveBackup() {
-        try {
-          const res = await fetch("/admin/backup/drive", { method: "POST" });
-          let data = null;
-          try {
-            data = await res.json();
-          } catch {}
-          if (res.ok && data && data.ok) {
-            showToast("Backup uploaded to Drive successfully.", "success");
-          } else {
-            var msg = (data && data.error) ? data.error : ('HTTP ' + res.status);
-            showToast(
-              "Drive backup failed: " + msg + " (check service account/folder)",
-              "danger"
-            );
-          }
-        } catch (e) {
-          showToast(
-            "Drive backup error: " + (e && e.message ? e.message : e),
-            "danger"
-          );
         }
       }
     </script>
     <script>
       // Register Service Worker for Offline Support
-      if ("serviceWorker" in navigator) {
-        window.addEventListener("load", () => {
-          navigator.serviceWorker
-            .register("/static/service-worker.js")
-            .then((registration) => {
-              console.log(
-                "Service Worker registered successfully:",
-                registration.scope
-              );
-            })
-            .catch((error) => {
-              console.log("Service Worker registration failed:", error);
-            });
-        });
-      }
+      /*
+      window.addEventListener("load", () => {
+        navigator.serviceWorker
+          .register("/static/service-worker.js")
+          .then((registration) => {
+            console.log(
+              "Service Worker registered successfully:",
+              registration.scope
+            );
+          })
+          .catch((error) => {
+            console.log("Service Worker registration failed:", error);
+          });
+      });
+      */
     </script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
   </body>

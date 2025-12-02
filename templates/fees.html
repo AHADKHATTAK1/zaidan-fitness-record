@@ -3,7 +3,21 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#00C46C" />
+    <meta name="color-scheme" content="light dark">
+    <!-- Cross-browser theme color support -->
+    <style>
+      html, body {
+        background-color: #00C46C;
+      }
+      @media (prefers-color-scheme: dark) {
+        html, body {
+          background-color: #00C46C;
+        }
+      }
+    </style>
+    <meta name="msapplication-navbutton-color" content="#00C46C" />
+    <meta name="msapplication-TileColor" content="#00C46C" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="#00C46C" />
     <link rel="icon" type="image/png" href="{{ logo_url or '/static/favicon.png' }}" />
     <link rel="apple-touch-icon" href="{{ logo_url or '/static/favicon.png' }}" />
     <link rel="manifest" href="/manifest.json" />
@@ -53,9 +67,6 @@
           <span class="brand">{{ gym_name }}</span>
         </a>
         <div class="ms-auto d-flex align-items-center gap-2">
-          <span class="badge text-bg-dark border border-light"
-            >{{ monthly_price }} {{ currency_code }}/mo</span
-          >
           <span class="fs-5" id="defaultFlag" title="Default Country"></span>
           <button
             class="btn btn-sm btn-outline-light"
@@ -83,10 +94,10 @@
       <div class="row g-2 align-items-end mb-3">
         <div class="col-md-3">
           <label class="form-label">Year</label>
-          <input id="year" class="form-control" type="number" />
+          <input id="year" class="form-control" type="number" placeholder="Enter year" title="Year" />
         </div>
         <div class="col-md-3">
-          <label class="form-label">Month</label>
+          <label class="form-label" for="month">Month</label>
           <select id="month" class="form-select">
             <option value="1">January</option>
             <option value="2">February</option>
@@ -94,12 +105,13 @@
             <option value="4">April</option>
             <option value="5">May</option>
             <option value="6">June</option>
-            <option value="7">July</option>
-            <option value="8">August</option>
-            <option value="9">September</option>
-            <option value="10">October</option>
-            <option value="11">November</option>
-            <option value="12">December</option>
+            <button
+              type="button"
+              class="btn btn-outline-primary flex-grow-1"
+              onclick="refreshAll()"
+            >
+              Load
+            </button>
           </select>
         </div>
         <div class="col-md-3">
@@ -111,12 +123,12 @@
               Load
             </button>
             <div class="form-check form-switch d-flex align-items-center">
-              <input
-                class="form-check-input"
-                type="checkbox"
-                id="autoRefresh"
-                checked
-              />
+          <input
+            class="form-check-input"
+            id="autoRefresh"
+            type="checkbox"
+            title="Enable auto-refresh"
+          />
               <label class="form-check-label ms-2" for="autoRefresh"
                 >Auto</label
               >
@@ -238,19 +250,20 @@
               <select id="payMethod" class="form-select">
                 <option value="cash" selected>Cash</option>
                 <option value="bank">Bank</option>
+            <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Cancel</button>
+              <select id="payMethod" class="form-select">
+                <option value="cash" selected>Cash</option>
+                <option value="bank">Bank</option>
                 <option value="online">Online</option>
               </select>
               <div class="form-text">Choose how the member paid.</div>
-            </div>
-            <div class="mb-3">
-              <label class="form-label">Amount</label>
-              <input id="payAmount" type="number" min="0" step="0.01" class="form-control" placeholder="Leave blank to use default" />
-              <div class="form-text">Blank uses member fee or gym monthly price.</div>
+            </div> class="form-text">Blank uses member fee or gym monthly price.</div>
             </div>
           </div>
           <div class="modal-footer">
             <button class="btn btn-outline-light" data-bs-dismiss="modal">Cancel</button>
             <button id="payConfirmBtn" class="btn btn-success" data-member-id="" data-year="" data-month="">Confirm & Slip</button>
+            <button type="button" class="btn btn-outline-warning" id="markUnpaidBtn">Mark Unpaid (This Month)</button>
           </div>
         </div>
       </div>
@@ -259,7 +272,7 @@
     <!-- Member Monthly Detail Modal -->
     <div class="modal fade" id="memberDetailModal" tabindex="-1" aria-hidden="true">
       <div class="modal-dialog modal-lg">
-        <div class="modal-content bg-dark text-light border border-info">
+        <div class="modal-content bg-dark text-light border border-primary">
           <div class="modal-header">
             <h5 class="modal-title"><i class="bi bi-list-check"></i> Monthly Details</h5>
             <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
@@ -442,6 +455,41 @@
         amtEl.value = amount != null && amount !== '' ? String(amount) : '';
         payModalInstance.show();
       }
+
+      (function(){
+        const btnUnpaid = document.getElementById('markUnpaidBtn');
+        if(btnUnpaid){
+          btnUnpaid.addEventListener('click', async function(){
+            try{
+              setLoading(btnUnpaid, true, 'Updating…');
+              const el = document.getElementById('payConfirmBtn');
+              const memberId = parseInt(el.dataset.memberId||'0');
+              const year = parseInt(el.dataset.year||'0');
+              const month = parseInt(el.dataset.month||'0');
+              if(!memberId || !year || !month){
+                showToast('Missing details for unpaid toggle', 'danger');
+                return;
+              }
+              const res = await fetch('/api/fees/mark-unpaid', {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ member_id: memberId, year, month })
+              });
+              const data = await res.json();
+              if(res.ok && data && data.ok){
+                showToast('Marked as Unpaid', 'warning');
+                try { payModalInstance?.hide(); } catch {}
+                refreshAll();
+              } else {
+                showToast('Failed to mark unpaid', 'danger');
+              }
+            } catch(e){
+              showToast('Error marking unpaid', 'danger');
+            } finally {
+              setLoading(btnUnpaid, false);
+            }
+          });
+        }
+      })();
 
       function showToast(message, type) {
         try {
