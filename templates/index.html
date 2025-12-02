@@ -465,6 +465,69 @@
       }
     });
 
+    function renderMembers(list) {
+      const container = document.getElementById('members');
+      if (!Array.isArray(list) || list.length === 0) {
+        container.innerHTML = '<div class="text-muted">No members found.</div>';
+        return;
+      }
+      const html = list.map(m => {
+        const phone = m.phone ? m.phone : '';
+        const adm = m.admission_date ? m.admission_date : '';
+        const ttype = m.training_type ? m.training_type : '';
+        const fee = (m.monthly_fee !== null && m.monthly_fee !== undefined) ? m.monthly_fee : '';
+        return `
+          <div class="card mb-2">
+            <div class="card-body d-flex justify-content-between align-items-center">
+              <div>
+                <div class="fw-semibold">${m.name || 'Unnamed'}</div>
+                <div class="text-muted small">${phone}</div>
+                <div class="text-muted small">Admission: ${adm} • ${ttype}${fee !== '' ? ` • Fee: ${fee}` : ''}</div>
+              </div>
+              <div class="d-flex gap-2">
+                <a class="btn btn-sm btn-outline-primary" href="#" onclick="openMemberDetails(${m.id}); return false;">View</a>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('');
+      container.innerHTML = html;
+    }
+
+    async function openMemberDetails(memberId) {
+      try {
+        const res = await fetch(`/api/member/${memberId}/payment-history`);
+        if (!res.ok) throw new Error('Failed to load member details');
+        const js = await res.json();
+        const m = js.member || {};
+        const pays = Array.isArray(js.payments) ? js.payments : [];
+        // Build payments table
+        let payHtml = '<div class="table-responsive"><table class="table table-sm table-striped"><thead><tr>'+
+          '<th>Year</th><th>Month</th><th>Status</th><th>Amount</th><th>Paid Date</th></tr></thead><tbody>';
+        payHtml += pays.map(p => `
+          <tr>
+            <td>${p.year}</td>
+            <td>${p.month_name || p.month}</td>
+            <td>${p.status}</td>
+            <td>${p.amount ?? ''}</td>
+            <td>${p.paid_date ?? ''}</td>
+          </tr>
+        `).join('');
+        payHtml += '</tbody></table></div>';
+        const payTab = document.getElementById('tab-payments');
+        if (payTab) payTab.innerHTML = `
+          <div class="mb-2"><strong>${m.name || ''}</strong> — ${m.phone || ''}</div>
+          ${payHtml}
+        `;
+        const modalEl = document.getElementById('memberDetailsModal');
+        const modal = new bootstrap.Modal(modalEl);
+        modal.show();
+      } catch (e) {
+        console.error(e);
+        if (typeof showToast === 'function') showToast('Failed to load member details');
+      }
+    }
+
     async function fallbackFetchMembers() {
       const container = document.getElementById('members');
       // 10s timeout guard
@@ -478,22 +541,7 @@
         if (!res.ok) throw new Error('Members API error');
         const list = await res.json();
         if (!Array.isArray(list)) throw new Error('Unexpected response');
-        if (list.length === 0) {
-          container.innerHTML = '<div class="text-muted">No members found.</div>';
-          return;
-        }
-        const html = list.map(m => `
-          <div class="card mb-2">
-            <div class="card-body d-flex justify-content-between align-items-center">
-              <div>
-                <div class="fw-semibold">${m.name || 'Unnamed'}</div>
-                <div class="text-muted small">${m.phone || ''}</div>
-              </div>
-              <a class="btn btn-sm btn-outline-primary" href="#" onclick="openMemberDetails?.(${m.id}); return false;">Details</a>
-            </div>
-          </div>
-        `).join('');
-        container.innerHTML = html;
+        renderMembers(list);
       } catch (e) {
         const retry = '<button class="btn btn-sm btn-outline-secondary" onclick="fallbackFetchMembers()">Retry</button>';
         container.innerHTML = '<div class="text-danger">Could not load members.</div>' + retry;
