@@ -77,6 +77,9 @@ Migrate(app, db)
 # Static uploads (member photos)
 UPLOAD_FOLDER = os.path.join(BASE_DIR, 'static', 'uploads')
 ALLOWED_IMAGE_EXTS = {'.jpg', '.jpeg', '.png', '.webp'}
+ALLOWED_DATA_EXTS = {'.csv', '.xlsx', '.xls'}
+MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB for images
+MAX_DATA_FILE_SIZE = 50 * 1024 * 1024  # 50MB for data files
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 # Local backups directory
@@ -86,6 +89,7 @@ os.makedirs(BACKUP_DIR, exist_ok=True)
 # Load environment variables and configure secret key
 load_dotenv(os.path.join(BASE_DIR, '.env'))
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev-secret-change-me')
+app.config['MAX_CONTENT_LENGTH'] = MAX_DATA_FILE_SIZE  # Limit request size
 # Cookie security settings
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
@@ -497,7 +501,15 @@ def set_setting(key: str, value: str) -> None:
     db.session.commit()
 
 def _sql_column_exists(table: str, column: str) -> bool:
+    """Check if a column exists in a table. Table name is validated against whitelist."""
+    # Whitelist of valid table names to prevent SQL injection
+    valid_tables = {'member', 'user', 'payment', 'payment_transaction', 'setting', 
+                    'uploaded_file', 'attendance', 'oauth_account', 'login_log', 
+                    'audit_log', 'sale', 'sale_item', 'inventory'}
+    if table not in valid_tables:
+        return False
     try:
+        # Safe to use table name now since it's whitelisted
         res = db.session.execute(db.text(f"PRAGMA table_info('{table}')")).mappings().all()
         for row in res:
             if row.get('name') == column:
@@ -577,6 +589,17 @@ def _log_login_event(user: "User", method: str) -> None:
         db.session.commit()
     except Exception:
         db.session.rollback()
+
+
+# Error handlers
+@app.errorhandler(413)
+def request_entity_too_large(error):
+    """Handle file upload size limit exceeded"""
+    size_mb = MAX_DATA_FILE_SIZE / (1024 * 1024)
+    return jsonify({
+        'ok': False,
+        'error': f'File too large. Maximum upload size is {size_mb}MB'
+    }), 413
 
 
 def _sale_to_csv_bytes(sale: Sale) -> bytes:
@@ -1336,10 +1359,22 @@ def upload_data_file():
     f = request.files['file']
     if not f or not f.filename:
         return jsonify({'ok': False, 'error': 'empty filename'}), 400
+    
+    # Validate file extension
     orig = f.filename
+    ext = os.path.splitext(orig)[1].lower()
+    if ext not in ALLOWED_DATA_EXTS:
+        return jsonify({'ok': False, 'error': f'Invalid file type. Allowed: {", ".join(ALLOWED_DATA_EXTS)}'}), 400
+    
     data = f.read()
     if not data:
         return jsonify({'ok': False, 'error': 'empty file'}), 400
+    
+    # Validate file size
+    if len(data) > MAX_DATA_FILE_SIZE:
+        size_mb = MAX_DATA_FILE_SIZE / (1024 * 1024)
+        return jsonify({'ok': False, 'error': f'File too large. Maximum size: {size_mb}MB'}), 400
+    
     digest = _hash_bytes(data)
     # Duplicate content handling: return existing record instead of error
     existing_upload = UploadedFile.query.filter_by(content_hash=digest).first()
