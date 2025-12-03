@@ -33,6 +33,7 @@
       rel="stylesheet"
     />
     <link rel="stylesheet" href="/static/css/theme.css" />
+    <link rel="stylesheet" href="/static/css/custom.css" />
     <style>
       .badge-training { background: var(--light-grey); color: var(--charcoal); padding: 2px 6px; border-radius: 6px; font-size: .8rem; }
     </style>
@@ -84,6 +85,7 @@
         type="date"
         title="Admission Date"
         placeholder="Select admission date"
+        onchange="handleAdmissionDateChange()"
       />
       </div>
       <div class="col-md-2">
@@ -96,11 +98,10 @@
         title="Monthly Fee"
       />
       </div>
-      <div
-      class="col-md-1 form-check d-flex align-items-center gap-2 flex-wrap"
-      >
-      <input class="form-check-input" type="checkbox" id="init_paid" title="Mark as paid" />
+      <div class="col-md-1 form-check d-flex align-items-center gap-2 flex-wrap">
+      <input class="form-check-input" type="checkbox" id="init_paid" title="Mark admission month as paid" />
       <label class="form-check-label" for="init_paid">Paid?</label>
+      <small class="text-muted d-block w-100" id="paidMonthHint"></small>
       </div>
       <div class="col-md-2 d-flex gap-2 flex-wrap">
       <input
@@ -398,17 +399,14 @@
         <div>
         <label class="form-label">Photo</label>
         <input type="file" class="form-control" id="edit_photo" accept="image/*" title="Upload photo" placeholder="Upload photo" />
-        <div class="mt-2">
           <video
             id="editCamStream"
             autoplay
-            class="w-100 rounded border d-none"
-            style="max-height: 300px;"
+            class="w-100 rounded border d-none max-h-300"
           ></video>
           <canvas
             id="editCamCanvas"
-            class="w-100 rounded border d-none"
-            style="max-height: 300px;"
+            class="w-100 rounded border d-none max-h-300"
           ></canvas>
           <div class="d-flex gap-2 mt-2">
             <button
@@ -530,6 +528,84 @@
       } catch (e) {
         try { fallbackFetchMembers(); } catch (_) {}
       }
+
+      // Add Member form submit handler
+      const addForm = document.getElementById('addForm');
+      if (addForm) {
+        addForm.addEventListener('submit', async (e) => {
+          e.preventDefault();
+          const name = document.getElementById('name').value.trim();
+          const phone = document.getElementById('phone').value.trim();
+          const admission_date = document.getElementById('admission_date').value;
+          const training_type = document.getElementById('training_type').value;
+          const custom_training = document.getElementById('custom_training').value.trim();
+          const monthly_fee = parseFloat(document.getElementById('monthly_fee').value) || 0;
+          const special_tag = document.getElementById('special_tag').checked;
+          const init_paid = document.getElementById('init_paid').checked;
+          const photoFile = document.getElementById('photo').files[0];
+
+          if (!name) {
+            if (typeof showToast === 'function') showToast('Name is required', 'warning');
+            return;
+          }
+
+          const payload = {
+            name,
+            phone,
+            admission_date,
+            training_type: training_type === 'other' ? custom_training : training_type,
+            monthly_fee,
+            special_tag,
+            is_active: true
+          };
+
+          try {
+            const res = await fetch('/api/members', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(payload)
+            });
+
+            if (!res.ok) throw new Error('Failed to add member');
+            const data = await res.json();
+            const memberId = data.id;
+
+            // Upload photo if captured or selected
+            if (photoFile) {
+              const formData = new FormData();
+              formData.append('photo', photoFile);
+              await fetch(`/api/members/${memberId}/photo`, {
+                method: 'POST',
+                body: formData
+              });
+            }
+
+            // Mark current month as paid if checked
+            if (init_paid) {
+              const now = new Date();
+              const month = now.toISOString().slice(0, 7);
+              await fetch('/api/payment/pay-now', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ member_id: memberId, month })
+              });
+            }
+
+            if (typeof showToast === 'function') showToast('Member added successfully!', 'success');
+            
+            // Reset form and camera
+            addForm.reset();
+            addCapturedBlob = null;
+            document.getElementById('addCaptureStatus').textContent = '';
+            document.getElementById('customTrainingRow').classList.add('d-none');
+            
+            fallbackFetchMembers();
+          } catch (err) {
+            console.error('Add member error:', err);
+            if (typeof showToast === 'function') showToast('Failed to add member', 'danger');
+          }
+        });
+      }
     });
 
     window.selectedMembers = new Set();
@@ -557,15 +633,16 @@
               <div class="d-flex justify-content-between align-items-start mb-2">
                 <div class="d-flex gap-3 align-items-center">
                   <input type="checkbox" class="form-check-input member-checkbox" data-member-id="${m.id}" ${isSelected ? 'checked' : ''} onchange="toggleMemberSelection(${m.id})">
-                  <img src="${photoUrl}" alt="${m.name}" class="rounded-circle" width="50" height="50" style="object-fit:cover;" onerror="this.src='/static/uploads/default-avatar.png'" />
+                  <img src="${photoUrl}" alt="${m.name}" class="rounded-circle object-fit-cover" width="50" height="50" onerror="this.src='/static/uploads/default-avatar.png'" />
                   <div>
                     <div class="fw-semibold">${m.name || 'Unnamed'}</div>
                     <div class="text-muted small">${phone}</div>
                     <div class="text-muted small">Admission: ${adm} • ${ttype}${fee !== '' ? ` • Fee: ${fee}` : ''}</div>
                   </div>
+                  </div>
                 </div>
                 <div class="d-flex gap-1 flex-wrap">
-                  <button class="btn btn-sm btn-outline-primary" onclick="openMemberDetails(${m.id})" title="View Details"><i class="bi bi-eye"></i> View</button>
+                  <button class="btn btn-sm btn-outline-primary" onclick="openMemberDetails(${m.id})" title="View Full Details"><i class="bi bi-info-circle"></i> Detail</button>
                   <button class="btn btn-sm btn-outline-secondary" onclick="openEditMember(${m.id})" title="Edit Member"><i class="bi bi-pencil"></i> Edit</button>
                   <button class="btn btn-sm btn-outline-success" onclick="payThisMonth(${m.id})" title="Pay This Month"><i class="bi bi-cash-coin"></i> Pay</button>
                   <button class="btn btn-sm btn-outline-info" onclick="uploadPhoto(${m.id})" title="Upload Photo"><i class="bi bi-camera"></i> Photo</button>
@@ -996,6 +1073,92 @@
       status.textContent = '';
     }
 
+    // Handle admission date change - auto check paid for admission month
+    function handleAdmissionDateChange() {
+      const admissionDate = document.getElementById('admission_date').value;
+      const paidCheckbox = document.getElementById('init_paid');
+      const hint = document.getElementById('paidMonthHint');
+      
+      if (admissionDate) {
+        const date = new Date(admissionDate);
+        const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        const month = monthNames[date.getMonth()];
+        const year = date.getFullYear();
+        hint.textContent = `(${month} ${year})`;
+        paidCheckbox.checked = true;
+      } else {
+        hint.textContent = '';
+        paidCheckbox.checked = false;
+      }
+    }
+
+    // Add Member Camera Functions
+    let addCameraStream = null;
+    let addCapturedBlob = null;
+
+    async function startAddCamera() {
+      const video = document.getElementById('addCamStream');
+      const btnStart = document.getElementById('btnAddStartCam');
+      const btnCapture = document.getElementById('btnAddCapture');
+      const btnStop = document.getElementById('btnAddStopCam');
+      const status = document.getElementById('addCaptureStatus');
+
+      try {
+        addCameraStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user' } });
+        video.srcObject = addCameraStream;
+        video.classList.remove('d-none');
+        btnStart.classList.add('d-none');
+        btnCapture.classList.remove('d-none');
+        btnStop.classList.remove('d-none');
+        status.textContent = 'Camera ready. Click Capture when ready.';
+      } catch (err) {
+        status.textContent = 'Camera access denied or unavailable.';
+        console.error('Add camera error:', err);
+      }
+    }
+
+    function captureAddPhoto() {
+      const video = document.getElementById('addCamStream');
+      const status = document.getElementById('addCaptureStatus');
+
+      const canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      canvas.getContext('2d').drawImage(video, 0, 0);
+
+      canvas.toBlob(blob => {
+        addCapturedBlob = blob;
+        const dt = new DataTransfer();
+        const file = new File([blob], 'camera_photo.jpg', { type: 'image/jpeg' });
+        dt.items.add(file);
+        document.getElementById('photo').files = dt.files;
+        status.textContent = 'Photo captured! Click "Add" to save member.';
+      }, 'image/jpeg', 0.9);
+
+      stopAddCamera();
+    }
+
+    function stopAddCamera() {
+      const video = document.getElementById('addCamStream');
+      const btnStart = document.getElementById('btnAddStartCam');
+      const btnCapture = document.getElementById('btnAddCapture');
+      const btnStop = document.getElementById('btnAddStopCam');
+      const status = document.getElementById('addCaptureStatus');
+
+      if (addCameraStream) {
+        addCameraStream.getTracks().forEach(track => track.stop());
+        addCameraStream = null;
+      }
+
+      video.classList.add('d-none');
+      btnStart.classList.remove('d-none');
+      btnCapture.classList.add('d-none');
+      btnStop.classList.add('d-none');
+      if (!addCapturedBlob) {
+        status.textContent = '';
+      }
+    }
+
     // Advanced Search with Autocomplete
     let searchTimeout;
     function handleAdvancedSearch() {
@@ -1026,13 +1189,11 @@
       }
       
       container.innerHTML = matches.map(m => `
-        <div class="p-2 border-bottom cursor-pointer hover-bg-light" onclick="selectFromAutocomplete(${m.id}, '${m.name}')"
-             style="cursor:pointer;" onmouseover="this.style.backgroundColor='#f0f0f0'" onmouseout="this.style.backgroundColor=''">
-          <div class="fw-bold">${m.name}</div>
+        <div class="p-2 border-bottom cursor-pointer hover-bg-light" onclick="selectFromAutocomplete(${m.id}, '${escapeHtml(m.name)}')">
+          <div class="fw-bold">${escapeHtml(m.name)}</div>
           <div class="small text-muted">${m.phone || ''} • ID: ${m.id}</div>
         </div>
       `).join('');
-      container.classList.remove('d-none');
     }
 
     function selectFromAutocomplete(id, name) {

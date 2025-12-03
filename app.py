@@ -399,6 +399,32 @@ class Product(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+class Attendance(db.Model):
+    """Track member check-ins/check-outs"""
+    id = db.Column(db.Integer, primary_key=True)
+    member_id = db.Column(db.Integer, db.ForeignKey('member.id'), nullable=False)
+    check_in = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    check_out = db.Column(db.DateTime, nullable=True)
+    date = db.Column(db.Date, nullable=False)
+    notes = db.Column(db.String(255), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "member_id": self.member_id,
+            "check_in": self.check_in.isoformat() if self.check_in else None,
+            "check_out": self.check_out.isoformat() if self.check_out else None,
+            "date": self.date.isoformat(),
+            "notes": self.notes,
+            "duration_minutes": self.get_duration_minutes()
+        }
+    
+    def get_duration_minutes(self):
+        if self.check_out and self.check_in:
+            return int((self.check_out - self.check_in).total_seconds() / 60)
+        return None
+
 # Duplicate removed: to_dict
 class Sale(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -1000,6 +1026,14 @@ def excel_dashboard():
     logo_url = get_setting('logo_filename') or ''
     return render_template('excel_dashboard.html', gym_name=gym_name, logo_url=logo_url, username=session.get('username'))
 
+@app.route('/dashboard/analytics')
+@login_required
+def analytics_dashboard():
+    """Advanced analytics dashboard."""
+    gym_name = get_gym_name()
+    logo_url = get_setting('logo_filename') or ''
+    return render_template('analytics.html', gym_name=gym_name, logo_url=logo_url, username=session.get('username'))
+
 @app.route('/api/stats/monthly')
 @login_required
 def stats_monthly():
@@ -1476,6 +1510,313 @@ def system_reset():
         db.drop_all()
         db.create_all()
         return jsonify({"ok": True, "message": "System reset to factory defaults"})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+# ============= ADVANCED FEATURES =============
+
+@app.route('/api/attendance/checkin', methods=['POST'])
+@login_required
+def attendance_checkin():
+    """Check in a member"""
+    try:
+        member_id = request.json.get('member_id')
+        notes = request.json.get('notes', '')
+        
+        if not member_id:
+            return jsonify({"ok": False, "error": "member_id required"}), 400
+        
+        member = db.session.get(Member, member_id)
+        if not member:
+            return jsonify({"ok": False, "error": "Member not found"}), 404
+        
+        today = datetime.now().date()
+        # Check if already checked in today
+        existing = Attendance.query.filter_by(member_id=member_id, date=today).first()
+        if existing and not existing.check_out:
+            return jsonify({"ok": False, "error": "Already checked in today"}), 400
+        
+        attendance = Attendance(
+            member_id=member_id,
+            check_in=datetime.now(),
+            date=today,
+            notes=notes
+        )
+        db.session.add(attendance)
+        db.session.commit()
+        
+        return jsonify({"ok": True, "attendance": attendance.to_dict()})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+@app.route('/api/attendance/checkout', methods=['POST'])
+@login_required
+def attendance_checkout():
+    """Check out a member"""
+    try:
+        member_id = request.json.get('member_id')
+        
+        if not member_id:
+            return jsonify({"ok": False, "error": "member_id required"}), 400
+        
+        today = datetime.now().date()
+        attendance = Attendance.query.filter_by(
+            member_id=member_id,
+            date=today
+        ).filter(Attendance.check_out.is_(None)).first()
+        
+        if not attendance:
+            return jsonify({"ok": False, "error": "No active check-in found"}), 404
+        
+        attendance.check_out = datetime.now()
+        db.session.commit()
+        
+        return jsonify({"ok": True, "attendance": attendance.to_dict()})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+@app.route('/api/attendance/today', methods=['GET'])
+@login_required
+def attendance_today():
+    """Get today's attendance"""
+    try:
+        today = datetime.now().date()
+        records = Attendance.query.filter_by(date=today).all()
+        
+        result = []
+        for att in records:
+            member = db.session.get(Member, att.member_id)
+            data = att.to_dict()
+            data['member'] = member.to_dict() if member else None
+            result.append(data)
+        
+        return jsonify({"ok": True, "attendance": result, "count": len(result)})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+@app.route('/api/attendance/history', methods=['GET'])
+@login_required
+def attendance_history():
+    """Get attendance history for a member or date range"""
+    try:
+        member_id = request.args.get('member_id', type=int)
+        date_from = request.args.get('date_from')
+        date_to = request.args.get('date_to')
+        
+        query = Attendance.query
+        
+        if member_id:
+            query = query.filter_by(member_id=member_id)
+        
+        if date_from:
+            query = query.filter(Attendance.date >= datetime.strptime(date_from, '%Y-%m-%d').date())
+        
+        if date_to:
+            query = query.filter(Attendance.date <= datetime.strptime(date_to, '%Y-%m-%d').date())
+        
+        records = query.order_by(Attendance.check_in.desc()).limit(100).all()
+        
+        result = []
+        for att in records:
+            member = db.session.get(Member, att.member_id)
+            data = att.to_dict()
+            data['member_name'] = member.name if member else 'Unknown'
+            result.append(data)
+        
+        return jsonify({"ok": True, "attendance": result})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+@app.route('/api/analytics/overview', methods=['GET'])
+@login_required
+def analytics_overview():
+    """Get comprehensive analytics overview"""
+    try:
+        now = datetime.now()
+        today = now.date()
+        
+        # Total members
+        total_members = Member.query.count()
+        active_members = Member.query.filter_by(is_active=True).count()
+        
+        # This month payments
+        paid_this_month = Payment.query.filter_by(
+            year=now.year, month=now.month, status='Paid'
+        ).count()
+        unpaid_this_month = Payment.query.filter_by(
+            year=now.year, month=now.month, status='Unpaid'
+        ).count()
+        
+        # Revenue this month
+        revenue_this_month = db.session.query(func.sum(PaymentTransaction.amount)).filter(
+            PaymentTransaction.year == now.year,
+            PaymentTransaction.month == now.month
+        ).scalar() or 0.0
+        
+        # Attendance today
+        attendance_today = Attendance.query.filter_by(date=today).count()
+        
+        # New members this month
+        new_members = Member.query.filter(
+            func.extract('year', Member.admission_date) == now.year,
+            func.extract('month', Member.admission_date) == now.month
+        ).count()
+        
+        # Training type breakdown
+        training_breakdown = {}
+        for row in db.session.query(Member.training_type, func.count(Member.id)).group_by(Member.training_type).all():
+            training_breakdown[row[0] or 'standard'] = row[1]
+        
+        # Revenue trend (last 6 months)
+        revenue_trend = []
+        for i in range(5, -1, -1):
+            month_date = datetime(now.year, now.month, 1)
+            if now.month - i < 1:
+                month_date = datetime(now.year - 1, 12 + (now.month - i), 1)
+            else:
+                month_date = datetime(now.year, now.month - i, 1)
+            
+            month_revenue = db.session.query(func.sum(PaymentTransaction.amount)).filter(
+                PaymentTransaction.year == month_date.year,
+                PaymentTransaction.month == month_date.month
+            ).scalar() or 0.0
+            
+            revenue_trend.append({
+                "month": month_date.strftime('%b %Y'),
+                "revenue": float(month_revenue)
+            })
+        
+        return jsonify({
+            "ok": True,
+            "total_members": total_members,
+            "active_members": active_members,
+            "paid_this_month": paid_this_month,
+            "unpaid_this_month": unpaid_this_month,
+            "revenue_this_month": float(revenue_this_month),
+            "attendance_today": attendance_today,
+            "new_members_this_month": new_members,
+            "training_breakdown": training_breakdown,
+            "revenue_trend": revenue_trend
+        })
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+@app.route('/api/reminders/bulk', methods=['POST'])
+@login_required
+def reminders_bulk():
+    """Send bulk reminders to selected members"""
+    try:
+        member_ids = request.json.get('member_ids', [])
+        
+        if not member_ids:
+            return jsonify({"ok": False, "error": "No members selected"}), 400
+        
+        now = datetime.now()
+        sent, failed = 0, 0
+        
+        for member_id in member_ids:
+            member = db.session.get(Member, member_id)
+            if not member:
+                failed += 1
+                continue
+            
+            phone = _normalize_phone(member.phone or '')
+            if not phone:
+                failed += 1
+                continue
+            
+            # Check unpaid status
+            payment = Payment.query.filter_by(
+                member_id=member_id,
+                year=now.year,
+                month=now.month,
+                status='Unpaid'
+            ).first()
+            
+            if not payment:
+                continue
+            
+            month_name = now.strftime('%B')
+            text = f"Dear {member.name}, your {month_name} {now.year} gym fee is unpaid. Please pay as soon as possible. Thank you!"
+            ok, _ = send_whatsapp_text(phone, text)
+            
+            if ok:
+                sent += 1
+            else:
+                failed += 1
+        
+        return jsonify({"ok": True, "sent": sent, "failed": failed})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+@app.route('/api/reports/monthly', methods=['GET'])
+@login_required
+def reports_monthly():
+    """Generate monthly report"""
+    try:
+        year = int(request.args.get('year', datetime.now().year))
+        month = int(request.args.get('month', datetime.now().month))
+        
+        # Payment stats
+        paid = Payment.query.filter_by(year=year, month=month, status='Paid').count()
+        unpaid = Payment.query.filter_by(year=year, month=month, status='Unpaid').count()
+        na = Payment.query.filter_by(year=year, month=month, status='N/A').count()
+        
+        # Revenue
+        revenue = db.session.query(func.sum(PaymentTransaction.amount)).filter(
+            PaymentTransaction.year == year,
+            PaymentTransaction.month == month
+        ).scalar() or 0.0
+        
+        # Attendance stats
+        month_start = datetime(year, month, 1).date()
+        if month == 12:
+            month_end = datetime(year + 1, 1, 1).date()
+        else:
+            month_end = datetime(year, month + 1, 1).date()
+        
+        total_attendance = Attendance.query.filter(
+            Attendance.date >= month_start,
+            Attendance.date < month_end
+        ).count()
+        
+        unique_members = db.session.query(func.count(func.distinct(Attendance.member_id))).filter(
+            Attendance.date >= month_start,
+            Attendance.date < month_end
+        ).scalar() or 0
+        
+        # Top attending members
+        top_attendance = db.session.query(
+            Attendance.member_id,
+            func.count(Attendance.id).label('visits')
+        ).filter(
+            Attendance.date >= month_start,
+            Attendance.date < month_end
+        ).group_by(Attendance.member_id).order_by(func.count(Attendance.id).desc()).limit(10).all()
+        
+        top_members = []
+        for att in top_attendance:
+            member = db.session.get(Member, att.member_id)
+            if member:
+                top_members.append({
+                    "name": member.name,
+                    "visits": att.visits
+                })
+        
+        return jsonify({
+            "ok": True,
+            "year": year,
+            "month": month,
+            "paid": paid,
+            "unpaid": unpaid,
+            "na": na,
+            "revenue": float(revenue),
+            "total_attendance": total_attendance,
+            "unique_members": unique_members,
+            "top_attending_members": top_members
+        })
     except Exception as e:
         return jsonify({"ok": False, "error": str(e)}), 500
 
