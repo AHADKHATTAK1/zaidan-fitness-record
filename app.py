@@ -2566,16 +2566,21 @@ def add_member():
     m = Member(name=name, phone=phone, email=email, training_type=training_type, custom_training=custom_training, monthly_fee=monthly_fee, special_tag=special_tag, admission_date=admission_date, plan_type=plan_type, referral_code=_gen_referral_code())
     db.session.add(m)
     db.session.commit()
-    # initialize payment rows for the admission year
-    for month in range(1,13):
-        if datetime(admission_date.year, month, 1).date() < admission_date:
-            status = "N/A"
-        elif month == admission_date.month:
-            status = "Paid"  # Admission month is automatically marked as paid
-        else:
-            status = "Unpaid"
-        p = Payment(member_id=m.id, year=admission_date.year, month=month, status=status)
-        db.session.add(p)
+    # initialize payment rows from admission year to current year + 1
+    current_year = datetime.now().year
+    end_year = current_year + 1
+    for year in range(admission_date.year, end_year + 1):
+        for month in range(1, 13):
+            # Check if this month is before admission date
+            month_date = datetime(year, month, 1).date()
+            if month_date < admission_date:
+                status = "N/A"
+            elif year == admission_date.year and month == admission_date.month:
+                status = "Paid"  # Admission month is automatically marked as paid
+            else:
+                status = "Unpaid"
+            p = Payment(member_id=m.id, year=year, month=month, status=status)
+            db.session.add(p)
     db.session.commit()
     append_audit('member.create', {'member_id': m.id, 'name': m.name, 'phone': m.phone, 'admission_date': m.admission_date.isoformat(), 'plan_type': m.plan_type})
     return jsonify(m.to_dict()), 201
