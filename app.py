@@ -1427,29 +1427,25 @@ def fees_remind():
         month = int(request.args.get('month') or datetime.now().month)
     except ValueError:
         return jsonify({"ok": False, "error": "invalid year/month"}), 400
-        result = send_bulk_text_reminders(year, month)
-        return jsonify(result)
     
-    def send_bulk_text_reminders(year: int, month: int) -> dict:
-        """Send WhatsApp text reminders to all unpaid members for the given year and month."""
-        unpaid = Payment.query.filter_by(year=year, month=month, status='Unpaid').all()
-        sent, failed = 0, 0
-        for p in unpaid:
-            m = db.session.get(Member, p.member_id)
-            if not m:
-                continue
-            phone = _normalize_phone(m.phone or '')
-            if not phone:
-                failed += 1
-                continue
-            month_name = datetime(year, month, 1).strftime('%B')
-            text = f"Dear {m.name}, your {month_name} {year} gym fee is unpaid. Please pay as soon as possible. Thank you!"
-            ok, _ = send_whatsapp_text(phone, text)
-            if ok:
-                sent += 1
-            else:
-                failed += 1
-        return {"ok": True, "sent": sent, "failed": failed}
+    unpaid = Payment.query.filter_by(year=year, month=month, status='Unpaid').all()
+    sent, failed = 0, 0
+    for p in unpaid:
+        m = db.session.get(Member, p.member_id)
+        if not m:
+            continue
+        phone = _normalize_phone(m.phone or '')
+        if not phone:
+            failed += 1
+            continue
+        month_name = datetime(year, month, 1).strftime('%B')
+        text = f"Dear {m.name}, your {month_name} {year} gym fee is unpaid. Please pay as soon as possible. Thank you!"
+        ok, _ = send_whatsapp_text(phone, text)
+        if ok:
+            sent += 1
+        else:
+            failed += 1
+    return jsonify({"ok": True, "sent": sent, "failed": failed})
 
 @app.route('/api/backup/create', methods=['POST'])
 @login_required
