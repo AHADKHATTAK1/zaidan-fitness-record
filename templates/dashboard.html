@@ -2327,7 +2327,7 @@
                       if (!admissionPaid) {
                         btn = '<button class="btn btn-sm btn-outline-success ms-3" onclick="markFeePaid(' + memberId + ',' + admissionMonth.month + ',' + admissionMonth.year + ',' + '\'Paid\'' + ')">Mark Paid</button>';
                       }
-                      admissionStatusDiv.innerHTML = '<span class="badge ' + badgeClass + ' fs-5 px-4 py-2">Admission Month: ' + admissionMonth.month_name + ' ' + admissionMonth.year + ' - ' + badgeText + '</span>' + remainderTag + '<span class="badge bg-info text-dark ms-2">Admission month</span>' + btn;
+                      admissionStatusDiv.innerHTML = '<span class="badge ' + badgeClass + ' fs-5 px-4 py-2">Admission Month: ' + admissionMonth.month_name + ' ' + admissionMonth.year + ' - ' + badgeText + '</span>' + remainderTag + btn;
                     } else {
                       admissionStatusDiv.innerHTML = '';
                     }
