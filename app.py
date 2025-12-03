@@ -2116,6 +2116,11 @@ def member_payment_history(member_id):
     for y, m in ym_list:
         p = payment_map.get((y, m))
         status = p.status if p else 'Unpaid'
+        
+        # Skip N/A months (before admission date) - don't include in timeline
+        if status == 'N/A':
+            continue
+        
         amount = None
         paid_date = None
         if status == 'Paid' and p:
