@@ -267,17 +267,39 @@
             <i class="bi bi-calendar-month me-1"></i>Monthly Details
           </h5>
           <div class="row g-2 align-items-end">
-            <div class="col-md-3">
-              <label class="form-label" for="monthDetailInput">Select Month</label>
-              <input
-                id="monthDetailInput"
-                class="form-control"
-                type="month"
-                pattern="[0-9]{4}-[0-9]{2}"
+            <div class="col-md-2">
+              <label class="form-label" for="monthDetailYear">Year</label>
+              <select
+                id="monthDetailYear"
+                class="form-select"
+                aria-label="Select year for detailed view"
+                title="Select year"
+              >
+                <option value="">Year</option>
+              </select>
+            </div>
+            <div class="col-md-2">
+              <label class="form-label" for="monthDetailMonth">Month</label>
+              <select
+                id="monthDetailMonth"
+                class="form-select"
                 aria-label="Select month for detailed view"
-                title="Select month for detailed view (YYYY-MM format)"
-                placeholder="YYYY-MM"
-              />
+                title="Select month"
+              >
+                <option value="">Month</option>
+                <option value="1">January</option>
+                <option value="2">February</option>
+                <option value="3">March</option>
+                <option value="4">April</option>
+                <option value="5">May</option>
+                <option value="6">June</option>
+                <option value="7">July</option>
+                <option value="8">August</option>
+                <option value="9">September</option>
+                <option value="10">October</option>
+                <option value="11">November</option>
+                <option value="12">December</option>
+              </select>
             </div></invoke>
             <div class="col-md-auto">
               <button
@@ -1357,14 +1379,15 @@
 
             // Monthly Details - Load comprehensive payment info for selected month
             async function loadMonthlyDetails() {
-              const monthInput = document.getElementById('monthDetailInput');
+              const yearSelect = document.getElementById('monthDetailYear');
+              const monthSelect = document.getElementById('monthDetailMonth');
               const resultsDiv = document.getElementById('monthlyDetailsResults');
-              const monthVal = monthInput.value;
-              if (!monthVal) {
-                resultsDiv.innerHTML = '<div class="alert alert-warning">Please select a month.</div>';
+              const year = parseInt(yearSelect.value);
+              const month = parseInt(monthSelect.value);
+              if (!year || !month) {
+                resultsDiv.innerHTML = '<div class="alert alert-warning">Please select both year and month.</div>';
                 return;
               }
-              const [year, month] = monthVal.split('-').map(Number);
               try {
                 resultsDiv.innerHTML = '<div class="spinner-border spinner-border-sm"></div> Loading monthly details...';
                 const res = await fetch(`/api/fees/month?year=${year}&month=${month}`);
@@ -1923,6 +1946,26 @@
                 backupModal.addEventListener('show.bs.modal', function(){
                   refreshBackupList();
                 });
+              }
+              
+              // Initialize year dropdown for monthly details
+              const yearSelect = document.getElementById('monthDetailYear');
+              if (yearSelect) {
+                const currentYear = new Date().getFullYear();
+                const currentMonth = new Date().getMonth() + 1;
+                // Populate years from 2020 to current year + 1
+                for (let y = 2020; y <= currentYear + 1; y++) {
+                  const option = document.createElement('option');
+                  option.value = y;
+                  option.textContent = y;
+                  if (y === currentYear) option.selected = true;
+                  yearSelect.appendChild(option);
+                }
+                // Set current month
+                const monthSelect = document.getElementById('monthDetailMonth');
+                if (monthSelect) {
+                  monthSelect.value = currentMonth;
+                }
               }
             });
 
