@@ -2348,13 +2348,17 @@
                           if (!nextDue && pp.status === 'Unpaid') nextDue = new Date(pp.year, pp.month - 1, 1);
                         }
                         var nextDueStr = nextDue ? nextDue.toLocaleString(undefined, { month: 'short', year: 'numeric' }) : '-';
+                        var payBtn = '';
+                        if (nextDue) {
+                          payBtn = '<button class="btn btn-sm btn-outline-success ms-3" onclick="markFeePaid('+ memberId +','+ (nextDue.getMonth()+1) +','+ nextDue.getFullYear() +',\'Paid\')">Mark Next Due Paid</button>';
+                        }
                         var summaryBar = ''+
-                          '<div class="alert alert-secondary py-2 px-3 d-flex align-items-center gap-3 mb-3">'+
+                          '<div class="alert alert-secondary py-2 px-3 d-flex align-items-center justify-content-between mb-3">'+
                           '<div><strong>Summary:</strong> '+
-                          '<span>Paid months: '+paidCount+'</span>'+ 
-                          '<span class="ms-2">Unpaid: '+unpaidCount+'</span>'+ 
-                          '<span class="ms-2">Next Due: '+nextDueStr+'</span>'+ 
-                          '</div></div>';
+                          '<span class="badge text-bg-success">Paid: '+paidCount+'</span>'+ 
+                          '<span class="badge text-bg-danger ms-2">Unpaid: '+unpaidCount+'</span>'+ 
+                          '<span class="badge text-bg-warning ms-2">Next Due: '+nextDueStr+'</span>'+ 
+                          '</div>'+ payBtn +'</div>';
                         // If a dedicated container exists, use it; otherwise prepend in timeline
                         var summaryDiv = document.getElementById('memberPaymentsSummary');
                         if (summaryDiv) { summaryDiv.innerHTML = summaryBar; summaryDiv.classList.remove('d-none'); }
