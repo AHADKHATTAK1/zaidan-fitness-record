@@ -1061,13 +1061,29 @@ def stats_monthly():
         year = int(request.args.get('year') or datetime.now().year)
     except ValueError:
         return jsonify({"error":"invalid year"}), 400
-    paid = []
-    unpaid = []
-    na = []
-    for m in range(1, 12+1):
-        paid.append(Payment.query.filter_by(year=year, month=m, status='Paid').count())
-        unpaid.append(Payment.query.filter_by(year=year, month=m, status='Unpaid').count())
-        na.append(Payment.query.filter_by(year=year, month=m, status='N/A').count())
+    
+    # Optimized: Single query with GROUP BY instead of 36 separate queries
+    results = db.session.query(
+        Payment.month,
+        Payment.status,
+        func.count(Payment.id).label('count')
+    ).filter_by(year=year).group_by(Payment.month, Payment.status).all()
+    
+    # Initialize arrays with zeros for all 12 months
+    paid = [0] * 12
+    unpaid = [0] * 12
+    na = [0] * 12
+    
+    # Fill in actual counts from query results
+    for month, status, count in results:
+        idx = month - 1  # Convert 1-based month to 0-based index
+        if status == 'Paid':
+            paid[idx] = count
+        elif status == 'Unpaid':
+            unpaid[idx] = count
+        elif status == 'N/A':
+            na[idx] = count
+    
     return jsonify({"year": year, "paid": paid, "unpaid": unpaid, "na": na})
 
 @app.route('/login/google')
@@ -1882,36 +1898,49 @@ def fees_month_detail():
     except ValueError:
         return jsonify({"ok": False, "error": "invalid year/month"}), 400
     
-    payments = Payment.query.filter_by(year=year, month=month).all()
-    paid_count = sum(1 for p in payments if p.status == 'Paid')
-    unpaid_count = sum(1 for p in payments if p.status == 'Unpaid')
+    # Optimized: Use join to load payments with members in a single query
+    payments = db.session.query(Payment, Member).join(
+        Member, Payment.member_id == Member.id
+    ).filter(
+        Payment.year == year,
+        Payment.month == month
+    ).all()
+    
+    paid_count = sum(1 for p, _ in payments if p.status == 'Paid')
+    unpaid_count = sum(1 for p, _ in payments if p.status == 'Unpaid')
     
     try:
         currency = get_setting('currency_code') or 'PKR'
     except Exception:
         currency = 'PKR'
     
+    # Get all payment transactions for this month in one query
+    member_ids = [p.member_id for p, _ in payments if p.status == 'Paid']
+    transactions = {}
+    if member_ids:
+        txs = PaymentTransaction.query.filter(
+            PaymentTransaction.member_id.in_(member_ids),
+            PaymentTransaction.year == year,
+            PaymentTransaction.month == month
+        ).order_by(PaymentTransaction.member_id, PaymentTransaction.created_at.desc()).all()
+        
+        # Keep only the latest transaction per member
+        for tx in txs:
+            if tx.member_id not in transactions:
+                transactions[tx.member_id] = tx
+    
     collected = 0.0
     members_data = []
     
-    for p in payments:
-        member = db.session.get(Member, p.member_id)
-        if not member:
-            continue
-        
+    for p, member in payments:
         amount = 0.0
         paid_date = None
         
-        if p.status == 'Paid':
-            tx = PaymentTransaction.query.filter_by(
-                member_id=member.id,
-                year=year,
-                month=month
-            ).order_by(PaymentTransaction.created_at.desc()).first()
-            if tx:
-                amount = tx.amount or 0.0
-                paid_date = tx.created_at.strftime('%Y-%m-%d') if tx.created_at else None
-                collected += amount
+        if p.status == 'Paid' and member.id in transactions:
+            tx = transactions[member.id]
+            amount = tx.amount or 0.0
+            paid_date = tx.created_at.strftime('%Y-%m-%d') if tx.created_at else None
+            collected += amount
         
         members_data.append({
             'member_id': member.id,
@@ -1948,32 +1977,55 @@ def fees_unpaid_summary():
     except Exception:
         monthly_price = 8.0
     
-    members = Member.query.all()
+    # Optimized: Get unpaid counts per member in a single query
+    unpaid_counts = db.session.query(
+        Payment.member_id,
+        func.count(Payment.id).label('unpaid_count')
+    ).filter_by(status='Unpaid').group_by(Payment.member_id).all()
+    
+    # Create a dict for fast lookup
+    unpaid_dict = {member_id: count for member_id, count in unpaid_counts}
+    
+    # Get last paid payment for each member in a single query
+    # Use window function or subquery for best performance
+    last_paid_subquery = db.session.query(
+        Payment.member_id,
+        func.max(Payment.year * 100 + Payment.month).label('max_ym')
+    ).filter_by(status='Paid').group_by(Payment.member_id).subquery()
+    
+    last_paid_payments = db.session.query(
+        Payment.member_id,
+        Payment.year,
+        Payment.month
+    ).join(
+        last_paid_subquery,
+        (Payment.member_id == last_paid_subquery.c.member_id) &
+        ((Payment.year * 100 + Payment.month) == last_paid_subquery.c.max_ym)
+    ).all()
+    
+    last_paid_dict = {
+        member_id: (year, month) 
+        for member_id, year, month in last_paid_payments
+    }
+    
+    # Get only members who have unpaid payments
+    member_ids_with_unpaid = list(unpaid_dict.keys())
+    members = Member.query.filter(Member.id.in_(member_ids_with_unpaid)).all() if member_ids_with_unpaid else []
+    
+    month_names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
     unpaid_members = []
     
     for member in members:
-        # Find all unpaid payments
-        unpaid_payments = Payment.query.filter_by(
-            member_id=member.id,
-            status='Unpaid'
-        ).order_by(Payment.year.desc(), Payment.month.desc()).all()
-        
-        if not unpaid_payments:
+        months_unpaid = unpaid_dict.get(member.id, 0)
+        if months_unpaid == 0:
             continue
-        
-        months_unpaid = len(unpaid_payments)
+            
         total_due = months_unpaid * monthly_price
         
-        # Find last paid month
-        last_paid = Payment.query.filter_by(
-            member_id=member.id,
-            status='Paid'
-        ).order_by(Payment.year.desc(), Payment.month.desc()).first()
-        
         last_paid_month = None
-        if last_paid:
-            month_names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-            last_paid_month = f"{month_names[last_paid.month - 1]} {last_paid.year}"
+        if member.id in last_paid_dict:
+            year, month = last_paid_dict[member.id]
+            last_paid_month = f"{month_names[month - 1]} {year}"
         
         unpaid_members.append({
             'id': member.id,
