@@ -2677,6 +2677,7 @@ def add_member():
     # initialize payment rows from admission year to current year + 1
     current_year = datetime.now().year
     end_year = current_year + 1
+    admission_month_payment = None
     for year in range(admission_date.year, end_year + 1):
         for month in range(1, 13):
             # Check if this month is before admission date
@@ -2685,11 +2686,33 @@ def add_member():
                 status = "N/A"
             elif year == admission_date.year and month == admission_date.month:
                 status = "Paid"  # Admission month is automatically marked as paid
+                admission_month_payment = (year, month)
             else:
                 status = "Unpaid"
             p = Payment(member_id=m.id, year=year, month=month, status=status)
             db.session.add(p)
     db.session.commit()
+    
+    # Create PaymentTransaction for admission month
+    if admission_month_payment:
+        year, month = admission_month_payment
+        # Determine amount from member's monthly_fee or settings
+        try:
+            amount = float(monthly_fee) if monthly_fee else float(get_setting('monthly_price') or 8)
+        except Exception:
+            amount = 8.0
+        
+        tx = PaymentTransaction(
+            member_id=m.id,
+            year=year,
+            month=month,
+            amount=amount,
+            method='cash',
+            plan_type=plan_type,
+            created_at=admission_date  # Set transaction date to admission date
+        )
+        db.session.add(tx)
+        db.session.commit()
     append_audit('member.create', {'member_id': m.id, 'name': m.name, 'phone': m.phone, 'admission_date': m.admission_date.isoformat(), 'plan_type': m.plan_type})
     return jsonify(m.to_dict()), 201
 
