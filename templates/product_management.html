@@ -108,8 +108,8 @@
                 />
               </div>
               <div class="col-md-4">
-                <label class="form-label">Category</label>
-                <select class="form-select" id="pmCategory">
+                <label class="form-label" for="pmCategory">Category</label>
+                <select class="form-select" id="pmCategory" aria-label="Filter by category">
                   <option value="">All</option>
                   {% for cat in categories %}
                   <option value="{{ cat }}">{{ cat }}</option>
