@@ -187,10 +187,27 @@
       <button type="button" id="toggleViewTable" class="btn btn-outline-secondary" onclick="setMemberView('table')" aria-label="Table view" title="Table view"><i class="bi bi-list"></i></button>
       </div>
       </h3>
-      <div id="memberSummary" class="mb-2 small d-flex flex-wrap gap-2 align-items-center">
-      <span class="badge bg-secondary">Total: <span id="countTotal">0</span></span>
-      <span class="badge bg-success">Active: <span id="countActive">0</span></span>
-      <span class="badge bg-secondary">Inactive: <span id="countInactive">0</span></span>
+      <div id="memberSummary" class="mb-3">
+        <div class="row g-2">
+          <div class="col-auto">
+            <span class="badge bg-primary fs-6">Total: <span id="countTotal">0</span></span>
+          </div>
+          <div class="col-auto">
+            <span class="badge bg-success fs-6">Active: <span id="countActive">0</span></span>
+          </div>
+          <div class="col-auto">
+            <span class="badge bg-secondary fs-6">Inactive: <span id="countInactive">0</span></span>
+          </div>
+          <div class="col-auto">
+            <span class="badge bg-info fs-6">Paid: <span id="countPaid">0</span></span>
+          </div>
+          <div class="col-auto">
+            <span class="badge bg-warning fs-6">Unpaid: <span id="countUnpaid">0</span></span>
+          </div>
+          <div class="col-auto">
+            <span class="badge bg-light text-dark fs-6">N/A: <span id="countNA">0</span></span>
+          </div>
+        </div>
       </div>
       <div class="row g-2 mb-3" id="memberFilters">
       <div class="col-md-4">
@@ -616,6 +633,22 @@
       const container = document.getElementById('members');
       const totalCount = document.getElementById('totalCount');
       if (totalCount) totalCount.textContent = list.length;
+      
+      // Update summary counters
+      const countTotal = document.getElementById('countTotal');
+      const countActive = document.getElementById('countActive');
+      const countInactive = document.getElementById('countInactive');
+      const countPaid = document.getElementById('countPaid');
+      const countUnpaid = document.getElementById('countUnpaid');
+      const countNA = document.getElementById('countNA');
+      
+      if (countTotal) countTotal.textContent = list.length;
+      if (countActive) countActive.textContent = list.filter(m => m.is_active).length;
+      if (countInactive) countInactive.textContent = list.filter(m => !m.is_active).length;
+      if (countPaid) countPaid.textContent = list.filter(m => m.current_fee_status === 'Paid').length;
+      if (countUnpaid) countUnpaid.textContent = list.filter(m => m.current_fee_status === 'Unpaid').length;
+      if (countNA) countNA.textContent = list.filter(m => m.current_fee_status === 'N/A').length;
+      
       if (!Array.isArray(list) || list.length === 0) {
         container.innerHTML = '<div class="text-muted">No members found.</div>';
         return;
