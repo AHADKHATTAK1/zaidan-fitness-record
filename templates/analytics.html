@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Analytics - {{ gym_name }}</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <link rel="stylesheet" href="/static/css/theme.css" />
+</head>
+<body class="p-4">
+  <div class="container-fluid">
+    <nav class="navbar navbar-expand border rounded px-3 mb-3">
+      <a class="navbar-brand d-flex align-items-center gap-2" href="/dashboard">
+        {% if logo_url %}
+        <img src="{{ logo_url }}" alt="{{ gym_name }}" class="navbar-logo" />
+        {% endif %}
+        <span class="brand">{{ gym_name }}</span>
+      </a>
+      <div class="ms-auto d-flex align-items-center gap-2">
+        <a class="btn btn-sm btn-outline-light" href="/dashboard">Dashboard</a>
+        <a class="btn btn-sm btn-outline-light" href="/members">Members</a>
+        <a class="btn btn-sm btn-outline-light" href="/fees">Fees</a>
+        <a class="btn btn-sm btn-outline-danger" href="/logout">Logout</a>
+      </div>
+    </nav>
+
+    <h2 class="mb-4"><i class="bi bi-graph-up"></i> Advanced Analytics</h2>
+
+    <!-- KPI Cards -->
+    <div class="row g-3 mb-4">
+      <div class="col-md-3">
+        <div class="card text-center">
+          <div class="card-body">
+            <i class="bi bi-people-fill text-primary fs-1"></i>
+            <h3 id="kpi-total-members" class="mt-2">-</h3>
+            <p class="text-muted mb-0">Total Members</p>
+            <small class="text-success" id="kpi-active-members">- active</small>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-3">
+        <div class="card text-center">
+          <div class="card-body">
+            <i class="bi bi-cash-stack text-success fs-1"></i>
+            <h3 id="kpi-revenue" class="mt-2">-</h3>
+            <p class="text-muted mb-0">Revenue This Month</p>
+            <small id="kpi-payment-rate" class="text-info">-% payment rate</small>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-3">
+        <div class="card text-center">
+          <div class="card-body">
+            <i class="bi bi-calendar-check text-info fs-1"></i>
+            <h3 id="kpi-attendance" class="mt-2">-</h3>
+            <p class="text-muted mb-0">Attendance Today</p>
+            <small id="kpi-attendance-percent" class="text-warning">-% of members</small>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-3">
+        <div class="card text-center">
+          <div class="card-body">
+            <i class="bi bi-person-plus-fill text-warning fs-1"></i>
+            <h3 id="kpi-new-members" class="mt-2">-</h3>
+            <p class="text-muted mb-0">New This Month</p>
+            <small id="kpi-growth" class="text-success">-% growth</small>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Charts Row -->
+    <div class="row g-3 mb-4">
+      <div class="col-md-8">
+        <div class="card">
+          <div class="card-body">
+            <h5 class="card-title">Revenue Trend (Last 6 Months)</h5>
+            <canvas id="revenueChart" height="80"></canvas>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="card">
+          <div class="card-body">
+            <h5 class="card-title">Training Types</h5>
+            <canvas id="trainingChart"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Attendance Section -->
+    <div class="row g-3 mb-4">
+      <div class="col-md-6">
+        <div class="card">
+          <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">Today's Attendance</h5>
+            <button class="btn btn-sm btn-primary" onclick="refreshAttendance()">
+              <i class="bi bi-arrow-clockwise"></i> Refresh
+            </button>
+          </div>
+          <div class="card-body overflow-auto max-h-400">
+            <div id="attendance-list">
+              <div class="text-center py-4 text-muted">Loading...</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <div class="card">
+          <div class="card-header">
+            <h5 class="mb-0">Top Attending Members</h5>
+          </div>
+          <div class="card-body">
+            <div id="top-members-list">
+              <div class="text-center py-4 text-muted">Loading...</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Payment Status -->
+    <div class="row g-3">
+      <div class="col-md-12">
+        <div class="card">
+          <div class="card-header d-flex justify-content-between align-items-center">
+            <h5 class="mb-0">Payment Status Distribution</h5>
+            <div>
+              <label class="me-2">Month:</label>
+              <label for="report-month-year" class="me-2 mb-0">Month:</label>
+              <select id="report-month-year" class="form-control form-control-sm d-inline-block w-auto" title="Select month and year" onchange="loadMonthlyReport()" aria-label="Select month and year">
+                <option value="" disabled selected hidden>Select month</option>
+              </select>
+            </div>
+          </div>
+          <div class="card-body">
+            <div class="row">
+              <div class="col-md-3 text-center">
+                <div class="p-3 border rounded">
+                  <h2 class="text-success" id="report-paid">-</h2>
+                  <p class="mb-0">Paid</p>
+                </div>
+              </div>
+              <div class="col-md-3 text-center">
+                <div class="p-3 border rounded">
+                  <h2 class="text-danger" id="report-unpaid">-</h2>
+                  <p class="mb-0">Unpaid</p>
+                </div>
+              </div>
+              <div class="col-md-3 text-center">
+                <div class="p-3 border rounded">
+                  <h2 class="text-muted" id="report-na">-</h2>
+                  <p class="mb-0">N/A</p>
+                </div>
+              </div>
+              <div class="col-md-3 text-center">
+                <div class="p-3 border rounded bg-success bg-opacity-10">
+                  <h2 class="text-success" id="report-revenue">-</h2>
+                  <p class="mb-0">Revenue</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    let revenueChart, trainingChart;
+
+    async function loadAnalytics() {
+      try {
+        const res = await fetch('/api/analytics/overview');
+        const data = await res.json();
+        
+        if (!data.ok) {
+          console.error('Failed to load analytics');
+          return;
+        }
+
+        // Update KPIs
+        document.getElementById('kpi-total-members').textContent = data.total_members;
+        document.getElementById('kpi-active-members').textContent = `${data.active_members} active`;
+        document.getElementById('kpi-revenue').textContent = `${data.revenue_this_month.toFixed(0)} PKR`;
+        document.getElementById('kpi-attendance').textContent = data.attendance_today;
+        document.getElementById('kpi-new-members').textContent = data.new_members_this_month;
+
+        const paymentRate = data.paid_this_month + data.unpaid_this_month > 0 
+          ? ((data.paid_this_month / (data.paid_this_month + data.unpaid_this_month)) * 100).toFixed(1)
+          : 0;
+        document.getElementById('kpi-payment-rate').textContent = `${paymentRate}% payment rate`;
+
+        const attendancePercent = data.active_members > 0
+          ? ((data.attendance_today / data.active_members) * 100).toFixed(1)
+          : 0;
+        document.getElementById('kpi-attendance-percent').textContent = `${attendancePercent}% of members`;
+
+        // Revenue Chart
+        const revenueCtx = document.getElementById('revenueChart');
+        if (revenueChart) revenueChart.destroy();
+        revenueChart = new Chart(revenueCtx, {
+          type: 'line',
+          data: {
+            labels: data.revenue_trend.map(r => r.month),
+            datasets: [{
+              label: 'Revenue (PKR)',
+              data: data.revenue_trend.map(r => r.revenue),
+              borderColor: '#198754',
+              backgroundColor: 'rgba(25, 135, 84, 0.1)',
+              fill: true,
+              tension: 0.4
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: { display: false }
+            }
+          }
+        });
+
+        // Training Types Chart
+        const trainingCtx = document.getElementById('trainingChart');
+        if (trainingChart) trainingChart.destroy();
+        trainingChart = new Chart(trainingCtx, {
+          type: 'doughnut',
+          data: {
+            labels: Object.keys(data.training_breakdown),
+            datasets: [{
+              data: Object.values(data.training_breakdown),
+              backgroundColor: ['#0d6efd', '#198754', '#ffc107', '#dc3545']
+            }]
+          },
+          options: {
+            responsive: true,
+            plugins: {
+              legend: { position: 'bottom' }
+            }
+          }
+        });
+
+      } catch (e) {
+        console.error('Error loading analytics:', e);
+      }
+    }
+
+    async function refreshAttendance() {
+      try {
+        const res = await fetch('/api/attendance/today');
+        const data = await res.json();
+        
+        const container = document.getElementById('attendance-list');
+        if (!data.ok || !data.attendance || data.attendance.length === 0) {
+          container.innerHTML = '<div class="text-center text-muted">No attendance records today</div>';
+          return;
+        }
+
+        const html = data.attendance.map(att => {
+          const member = att.member || {};
+          const duration = att.duration_minutes ? `${att.duration_minutes} min` : 'In progress';
+          return `
+            <div class="d-flex justify-content-between align-items-center p-2 border-bottom">
+              <div>
+                <strong>${member.name || 'Unknown'}</strong><br/>
+                <small class="text-muted">Check-in: ${new Date(att.check_in).toLocaleTimeString()}</small>
+              </div>
+              <span class="badge bg-${att.check_out ? 'success' : 'primary'}">${duration}</span>
+            </div>
+          `;
+        }).join('');
+
+        container.innerHTML = html;
+      } catch (e) {
+        console.error('Error loading attendance:', e);
+    async function loadMonthlyReport() {
+      const select = document.getElementById('report-month-year');
+      const monthInput = select.value;
+      if (!monthInput) return;
+
+      const [year, month] = monthInput.split('-');
+      
+      try {
+        const res = await fetch(`/api/reports/monthly?year=${year}&month=${month}`);
+        const data = await res.json();
+        
+        if (!data.ok) return;
+
+        document.getElementById('report-paid').textContent = data.paid;
+        document.getElementById('report-unpaid').textContent = data.unpaid;
+        document.getElementById('report-na').textContent = data.na;
+        document.getElementById('report-revenue').textContent = `${data.revenue.toFixed(0)} PKR`;
+
+        // Update top members list
+        const topList = document.getElementById('top-members-list');
+        if (data.top_attending_members && data.top_attending_members.length > 0) {
+          const html = data.top_attending_members.map((m, i) => `
+            <div class="d-flex justify-content-between align-items-center p-2 border-bottom">
+              <div>
+                <span class="badge bg-primary me-2">${i + 1}</span>
+                <strong>${m.name}</strong>
+              </div>
+              <span class="badge bg-success">${m.visits} visits</span>
+            </div>
+          `).join('');
+          topList.innerHTML = html;
+        }
+      } catch (e) {
+        console.error('Error loading monthly report:', e);
+      }
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      loadAnalytics();
+      refreshAttendance();
+
+      // Populate and set current month in select
+      populateMonthYearSelect();
+      loadMonthlyReport();
+    });
+          const label = `${now.toLocaleString('default', { month: 'long' }, { month: m })} ${y}`;
+          select.innerHTML += `<option value="${value}">${label}</option>`;
+        }
+      }
+      // Set current month as selected
+      const currentValue = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
+      select.value = currentValue;
+    }
+        console.error('Error loading monthly report:', e);
+      }
+    }
+
+    // Initialize
+    document.addEventListener('DOMContentLoaded', () => {
+      loadAnalytics();
+      refreshAttendance();
+      
+      // Set current month
+      const now = new Date();
+      const monthStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+      document.getElementById('report-month').value = monthStr;
+      loadMonthlyReport();
+    });
+  </script>
+</body>
+</html>

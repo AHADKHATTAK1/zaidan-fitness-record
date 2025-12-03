@@ -273,6 +273,7 @@
                 id="monthDetailInput"
                 class="form-control"
                 type="month"
+                pattern="[0-9]{4}-[0-9]{2}"
                 aria-label="Select month for detailed view"
                 title="Select month for detailed view (YYYY-MM format)"
                 placeholder="YYYY-MM"
@@ -1592,8 +1593,8 @@
               <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
-              <div class="progress mb-3" style="height:6px;">
-                <div id="obProg" class="progress-bar" style="width:50%"></div>
+              <div class="progress progress-sm mb-3">
+                <div id="obProg" class="progress-bar w-50"></div>
               </div>
               <div id="obStep1">
                 <div class="mb-3">
@@ -1653,7 +1654,8 @@
               document.getElementById("obBack").disabled = n === 1;
               document.getElementById("obNext").classList.toggle("d-none", n === 2);
               document.getElementById("obFinish").classList.toggle("d-none", n !== 2);
-              document.getElementById("obProg").style.width = n * 50 + "%";
+              const prog = document.getElementById("obProg");
+              prog.style.width = n * 50 + "%";
             }
             function setLoading(btn, loading, label){
               if (!btn) return;
