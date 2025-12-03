@@ -257,11 +257,11 @@ def _save_member_image(member_id: int, storage) -> tuple[bool, str]:
 
 class Member(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(120), nullable=False)
-    phone = db.Column(db.String(50))
+    name = db.Column(db.String(120), nullable=False, index=True)
+    phone = db.Column(db.String(50), index=True)
     admission_date = db.Column(db.Date, nullable=False)
     plan_type = db.Column(db.String(20), default='monthly')
-    referral_code = db.Column(db.String(32), unique=True)
+    referral_code = db.Column(db.String(32), unique=True, index=True)
     referred_by = db.Column(db.Integer, db.ForeignKey('member.id'), nullable=True)
     access_tier = db.Column(db.String(20), default='standard')  # standard/unlimited
     email = db.Column(db.String(255), nullable=True)
@@ -333,11 +333,15 @@ class Member(db.Model):
 
 class Payment(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    member_id = db.Column(db.Integer, db.ForeignKey('member.id'), nullable=False)
-    year = db.Column(db.Integer, nullable=False)
-    month = db.Column(db.Integer, nullable=False)  # 1-12
-    status = db.Column(db.String(20), nullable=False)  # Paid/Unpaid/N/A
+    member_id = db.Column(db.Integer, db.ForeignKey('member.id'), nullable=False, index=True)
+    year = db.Column(db.Integer, nullable=False, index=True)
+    month = db.Column(db.Integer, nullable=False, index=True)  # 1-12
+    status = db.Column(db.String(20), nullable=False, index=True)  # Paid/Unpaid/N/A
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    __table_args__ = (
+        db.Index('idx_payment_year_month_status', 'year', 'month', 'status'),
+    )
     
     def to_dict(self):
         return {
