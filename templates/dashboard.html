@@ -2380,8 +2380,8 @@
                       var textClass = 'text-light';
                       if (p.status === 'Paid') { badgeClass = 'bg-success'; textClass = 'text-white'; }
                       else if (p.status === 'Unpaid') { badgeClass = 'bg-danger'; textClass = 'text-white'; }
+                      
                       // Compute summary and next-due before rendering rows (first loop)
-                      // We'll compute only once and inject a compact summary bar
                       if (i === 0) {
                         var paidCount = 0, unpaidCount = 0;
                         var nextDue = null;
@@ -2396,13 +2396,14 @@
                           payBtn = '<button class="btn btn-sm btn-outline-success ms-3" onclick="markFeePaid('+ memberId +','+ (nextDue.getMonth()+1) +','+ nextDue.getFullYear() +',\'Paid\')">Mark Next Due Paid</button>';
                         }
                         var summaryBar = ''+
-                          '<div class="alert alert-secondary py-2 px-3 d-flex align-items-center justify-content-between mb-3">'+
-                          '<div><strong>Summary:</strong> '+
+                          '<div class="alert alert-info py-2 px-3 mb-3">'+
+                          '<div class="mb-2"><i class="bi bi-info-circle"></i> <strong>Payment Timeline:</strong> Showing payments from admission date (<strong>'+ m.admission_date +'</strong>) onwards</div>'+
+                          '<div class="d-flex align-items-center justify-content-between">'+
+                          '<div>'+
                           '<span class="badge text-bg-success">Paid: '+paidCount+'</span>'+ 
                           '<span class="badge text-bg-danger ms-2">Unpaid: '+unpaidCount+'</span>'+ 
                           '<span class="badge text-bg-warning ms-2">Next Due: '+nextDueStr+'</span>'+ 
-                          '</div>'+ payBtn +'</div>';
-                        // If a dedicated container exists, use it; otherwise prepend in timeline
+                          '</div>'+ payBtn +'</div></div>';
                         var summaryDiv = document.getElementById('memberPaymentsSummary');
                         if (summaryDiv) { summaryDiv.innerHTML = summaryBar; summaryDiv.classList.remove('d-none'); }
                         else { html += summaryBar; }
@@ -2411,9 +2412,11 @@
                       if (admissionMonth && p.month === admissionMonth.month && p.year === admissionMonth.year) {
                         isAdmission = true;
                       }
-                      html += '<div class="list-group-item list-group-item-action '+ (isAdmission ? 'border-info' : 'border-secondary') +' '+ (isAdmission ? 'bg-dark' : 'bg-dark') +' py-3">';
+                      html += '<div class="list-group-item list-group-item-action '+ (isAdmission ? 'border-info border-3' : 'border-secondary') +' '+ (isAdmission ? 'bg-dark' : 'bg-dark') +' py-3">';
                       html += '<div class="d-flex w-100 justify-content-between align-items-center">';
-                      html += '<h6 class="mb-1">' + p.month_name + ' ' + p.year + '</h6>';
+                      html += '<h6 class="mb-1">';
+                      if (isAdmission) html += '<i class="bi bi-star-fill text-warning me-2"></i>';
+                      html += p.month_name + ' ' + p.year + '</h6>';
                       // Add "Next Due" chip on first unpaid month
                       var addNextDueChip = false;
                       if (p.status === 'Unpaid') {
