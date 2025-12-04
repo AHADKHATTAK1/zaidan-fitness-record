@@ -859,28 +859,29 @@
               <div class="card-body">
                 <div class="row g-3">
                   <div class="col-md-3">
-                    <small class="text-muted">Full Name</small>
-                    <input type="text" id="editName" class="form-control form-control-sm" />
+                    <small class="text-muted">Full Name <span class="text-danger">*</span></small>
+                    <input type="text" id="editName" class="form-control form-control-sm" placeholder="Required" oninput="onMemberFieldChange()" />
+                    <small id="nameError" class="text-danger d-none">Name is required</small>
                   </div>
                   <div class="col-md-3">
                     <small class="text-muted">Phone</small>
-                    <input type="text" id="editPhone" class="form-control form-control-sm" />
+                    <input type="text" id="editPhone" class="form-control form-control-sm" placeholder="0300-1234567" oninput="onMemberFieldChange()" />
                   </div>
                   <div class="col-md-3">
                     <small class="text-muted">Email</small>
-                    <input type="email" id="editEmail" class="form-control form-control-sm" />
+                    <input type="email" id="editEmail" class="form-control form-control-sm" placeholder="email@example.com" oninput="onMemberFieldChange()" />
                   </div>
                   <div class="col-md-3">
                     <small class="text-muted">CNIC</small>
-                    <input type="text" id="editCNIC" class="form-control form-control-sm" />
+                    <input type="text" id="editCNIC" class="form-control form-control-sm" placeholder="00000-0000000-0" oninput="onMemberFieldChange()" />
                   </div>
                   <div class="col-md-6">
                     <small class="text-muted">Address</small>
-                    <textarea id="editAddress" class="form-control form-control-sm" rows="2"></textarea>
+                    <textarea id="editAddress" class="form-control form-control-sm" rows="2" placeholder="Street, City, Province" oninput="onMemberFieldChange()"></textarea>
                   </div>
                   <div class="col-md-3">
                     <small class="text-muted">Gender</small>
-                    <select id="editGender" class="form-select form-select-sm">
+                    <select id="editGender" class="form-select form-select-sm" onchange="onMemberFieldChange()">
                       <option value="">Select</option>
                       <option value="Male">Male</option>
                       <option value="Female">Female</option>
@@ -889,7 +890,7 @@
                   </div>
                   <div class="col-md-3">
                     <small class="text-muted">Date of Birth</small>
-                    <input type="date" id="editDOB" class="form-control form-control-sm" />
+                    <input type="date" id="editDOB" class="form-control form-control-sm" oninput="onMemberFieldChange()" />
                   </div>
                 </div>
               </div>
@@ -911,27 +912,28 @@
                 </div>
                 <div class="row g-3">
                   <div class="col-md-3">
-                    <small class="text-muted">Admission Date</small>
-                    <input type="date" id="editAdmission" class="form-control form-control-sm" />
+                    <small class="text-muted">Admission Date <span class="text-danger">*</span></small>
+                    <input type="date" id="editAdmission" class="form-control form-control-sm" oninput="onMemberFieldChange()" />
+                    <small id="admissionError" class="text-danger d-none">Admission date is required</small>
                   </div>
                   <div class="col-md-3">
                     <small class="text-muted">Monthly Fee</small>
-                    <input type="number" id="editMonthlyFee" class="form-control form-control-sm" />
+                    <input type="number" id="editMonthlyFee" class="form-control form-control-sm" step="0.01" min="0" placeholder="0.00" oninput="onMemberFieldChange()" />
                   </div>
                   <div class="col-md-3">
                     <small class="text-muted">Referred By</small>
-                    <input type="text" id="editReferred" class="form-control form-control-sm" />
+                    <input type="text" id="editReferred" class="form-control form-control-sm" placeholder="Member name or ID" oninput="onMemberFieldChange()" />
                   </div>
                   <div class="col-md-3">
                     <small class="text-muted">Status</small>
-                    <select id="editStatus" class="form-select form-select-sm">
+                    <select id="editStatus" class="form-select form-select-sm" onchange="onMemberFieldChange()">
                       <option value="1">Active</option>
                       <option value="0">Inactive</option>
                     </select>
                   </div>
                   <div class="col-md-12">
-                    <small class="text-muted">Notes</small>
-                    <textarea id="editNotes" class="form-control form-control-sm" rows="3"></textarea>
+                    <small class="text-muted">Notes / Remarks</small>
+                    <textarea id="editNotes" class="form-control form-control-sm" rows="3" placeholder="Any special notes or remarks..." oninput="onMemberFieldChange()"></textarea>
                   </div>
                 </div>
               </div>
@@ -2918,6 +2920,82 @@
         }
       }
 
+      // Track if form has changes and auto-save
+      let memberFormHasChanges = false;
+      let memberSaveTimeout = null;
+      
+      // Validate member form fields
+      function validateMemberForm() {
+        let isValid = true;
+        const name = document.getElementById('editName').value.trim();
+        const nameError = document.getElementById('nameError');
+        if (!name) {
+          nameError.classList.remove('d-none');
+          isValid = false;
+        } else {
+          nameError.classList.add('d-none');
+        }
+        const admission = document.getElementById('editAdmission').value;
+        const admissionError = document.getElementById('admissionError');
+        if (!admission) {
+          admissionError.classList.remove('d-none');
+          isValid = false;
+        } else {
+          admissionError.classList.add('d-none');
+        }
+        return isValid;
+      }
+      
+      // Handle field changes and auto-save after 2 seconds
+      function onMemberFieldChange() {
+        memberFormHasChanges = true;
+        if (memberSaveTimeout) clearTimeout(memberSaveTimeout);
+        memberSaveTimeout = setTimeout(() => {
+          if (memberFormHasChanges && validateMemberForm()) {
+            saveMemberDetailsAuto();
+          }
+        }, 2000);
+      }
+      
+      // Auto-save version (silent feedback)
+      async function saveMemberDetailsAuto() {
+        const memberId = window.currentMemberId;
+        if (!memberId || !memberFormHasChanges) return;
+        const monthlyFeeVal = document.getElementById('editMonthlyFee').value;
+        const updatedData = {
+          name: document.getElementById('editName').value || '',
+          phone: document.getElementById('editPhone').value || '',
+          email: document.getElementById('editEmail').value || '',
+          cnic: document.getElementById('editCNIC').value || '',
+          address: document.getElementById('editAddress').value || '',
+          gender: document.getElementById('editGender').value || '',
+          date_of_birth: document.getElementById('editDOB').value || '',
+          admission_date: document.getElementById('editAdmission').value || '',
+          monthly_price: monthlyFeeVal ? parseFloat(monthlyFeeVal) : '',
+          referred_by: document.getElementById('editReferred').value || '',
+          is_active: document.getElementById('editStatus').value === '1',
+          notes: document.getElementById('editNotes').value || ''
+        };
+        try {
+          const res = await fetch(`/api/members/${memberId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(updatedData)
+          });
+          const data = await res.json();
+          if (data.ok || res.ok) {
+            memberFormHasChanges = false;
+            const saveBtn = document.getElementById('btnSaveMember');
+            const origHTML = saveBtn.innerHTML;
+            saveBtn.innerHTML = '<i class="bi bi-check-circle text-success"></i> Saved';
+            setTimeout(() => { saveBtn.innerHTML = origHTML; }, 1500);
+            if (typeof loadMembers === 'function') loadMembers();
+          }
+        } catch (e) {
+          console.error('Auto-save error:', e);
+        }
+      }
+      
       // Reset form to original member data
       function resetMemberForm() {
         const m = window.currentMemberData;
@@ -2925,8 +3003,6 @@
           showToast('No member data to reset', 'warning');
           return;
         }
-        
-        // Repopulate form with original values
         document.getElementById('editName').value = m.name || '';
         document.getElementById('editPhone').value = m.phone || '';
         document.getElementById('editEmail').value = m.email || '';
@@ -2939,7 +3015,8 @@
         document.getElementById('editReferred').value = m.referred_by || '';
         document.getElementById('editStatus').value = m.is_active ? '1' : '0';
         document.getElementById('editNotes').value = m.notes || '';
-        
+        memberFormHasChanges = false;
+        if (memberSaveTimeout) clearTimeout(memberSaveTimeout);
         showToast('Form reset to original values', 'info');
       }
 

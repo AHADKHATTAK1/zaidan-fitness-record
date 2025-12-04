@@ -362,15 +362,15 @@
         <form id="editMemberForm" class="vstack gap-3">
         <div>
         <label class="form-label">Name</label>
-        <input class="form-control" id="edit_name" placeholder="Enter name" />
+        <input class="form-control" id="edit_name" placeholder="Enter name" onblur="scheduleEditAutoSave()" />
         </div>
         <div>
         <label class="form-label">Phone</label>
-        <input class="form-control" id="edit_phone" placeholder="Enter phone number" />
+        <input class="form-control" id="edit_phone" placeholder="Enter phone number" onblur="scheduleEditAutoSave()" />
         </div>
         <div>
         <label class="form-label">Admission Date</label>
-        <input type="date" class="form-control" id="edit_admission" title="Admission Date" placeholder="Select admission date" />
+        <input type="date" class="form-control" id="edit_admission" title="Admission Date" placeholder="Select admission date" onchange="scheduleEditAutoSave()" />
         </div>
         <div>
         <label class="form-label" for="edit_access">Access Tier</label>
@@ -380,7 +380,7 @@
         </div>
         <div>
         <label class="form-label">Training Type</label>
-        <select class="form-select" id="edit_training_type" title="Select training type" onchange="toggleEditCustomTraining()">
+        <select class="form-select" id="edit_training_type" title="Select training type" onchange="toggleEditCustomTraining(); scheduleEditAutoSave();">
         <option value="standard">Gym</option>
         <option value="personal">Personal</option>
         <option value="cardio">Cardio</option>
@@ -393,6 +393,7 @@
         class="form-control"
         id="edit_custom_training"
         placeholder="e.g. CrossFit"
+        onblur="scheduleEditAutoSave()"
         />
         </div>
         <div>
@@ -403,6 +404,7 @@
         class="form-control"
         id="edit_monthly_fee"
         placeholder="Leave blank for default"
+        onblur="scheduleEditAutoSave()"
         />
         </div>
         <div class="form-check">
@@ -410,6 +412,7 @@
         class="form-check-input"
         type="checkbox"
         id="edit_special_tag"
+        onchange="scheduleEditAutoSave()"
         />
         <label class="form-check-label" for="edit_special_tag">Special Tag</label>
         </div>
@@ -784,25 +787,47 @@
       }
     }
 
+    // Debounce timer for auto-save
+    let editAutoSaveTimer = null;
+    
+    function scheduleEditAutoSave() {
+      // Clear existing timer
+      if (editAutoSaveTimer) clearTimeout(editAutoSaveTimer);
+      
+      // Schedule save after 2 seconds of inactivity
+      editAutoSaveTimer = setTimeout(() => {
+        saveEdit();
+      }, 2000);
+    }
+
     async function saveEdit() {
       const memberId = window.currentEditMemberId;
       if (!memberId) return;
+      
+      const monthlyFeeVal = document.getElementById('edit_monthly_fee').value;
       const data = {
         name: document.getElementById('edit_name').value.trim(),
         phone: document.getElementById('edit_phone').value.trim(),
         admission_date: document.getElementById('edit_admission').value,
-        monthly_fee: document.getElementById('edit_monthly_fee').value || null,
+        monthly_price: monthlyFeeVal ? parseFloat(monthlyFeeVal) : '',
         training_type: document.getElementById('edit_training_type').value,
         special_tag: document.getElementById('edit_special_tag').checked,
-        custom_training: document.getElementById('edit_custom_training').value.trim() || null
+        custom_training: document.getElementById('edit_custom_training').value.trim() || null,
+        is_active: true  // Default to active when editing from members page
       };
+      
+      console.log('Saving member edit:', memberId, data);
+      
       try {
         const res = await fetch(`/api/members/${memberId}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(data)
         });
+        console.log('Response status:', res.status, res.ok);
         const js = await res.json();
+        console.log('Response data:', js);
+        
         if (res.ok && js.ok) {
           // If there is a photo selected (either from file input or camera capture), upload it
           const photoInput = document.getElementById('edit_photo');
@@ -813,7 +838,7 @@
               const up = await fetch(`/api/members/${memberId}/photo`, { method: 'POST', body: fd });
               const upJs = await up.json().catch(() => ({}));
               if (up.ok && upJs.ok) {
-                if (typeof showToast === 'function') showToast('Member updated and photo uploaded');
+                if (typeof showToast === 'function') showToast('✓ Member updated and photo uploaded', 'success');
               } else {
                 if (typeof showToast === 'function') showToast('Member updated, but photo upload failed', 'warning');
               }
@@ -822,17 +847,17 @@
               if (typeof showToast === 'function') showToast('Member updated, but photo upload errored', 'warning');
             }
           } else {
-            if (typeof showToast === 'function') showToast('Member updated');
+            if (typeof showToast === 'function') showToast('✓ Member updated successfully!', 'success');
           }
-          // Close modal and refresh list
-          bootstrap.Modal.getInstance(document.getElementById('editMemberModal'))?.hide();
+          // Refresh list but keep modal open for further edits
           fallbackFetchMembers();
         } else {
-          if (typeof showToast === 'function') showToast('Failed to update member', 'danger');
+          const errorMsg = js.error || 'Unknown error';
+          if (typeof showToast === 'function') showToast('Failed to update: ' + errorMsg, 'danger');
         }
       } catch (e) {
-        console.error(e);
-        if (typeof showToast === 'function') showToast('Error updating member', 'danger');
+        console.error('Save edit error:', e);
+        if (typeof showToast === 'function') showToast('Error updating member: ' + e.message, 'danger');
       }
     }
 

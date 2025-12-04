@@ -283,29 +283,16 @@ class Member(db.Model):
     date_of_birth = db.Column(db.Date, nullable=True)
     notes = db.Column(db.Text, nullable=True)
 
+    # Relationships for efficient access to payments and transactions
+    payments = db.relationship('Payment', backref='member', lazy='dynamic')
+    transactions = db.relationship('PaymentTransaction', backref='member', lazy='dynamic')
+
     def to_dict(self):
-        # Compute current month fee status and last recorded amount
-        now = datetime.now()
-        try:
-            p = Payment.query.filter_by(member_id=self.id, year=now.year, month=now.month).first()
-            status = p.status if p else 'Unpaid'
-        except Exception:
-            status = 'Unpaid'
-        try:
-            tx = PaymentTransaction.query.filter_by(
-                member_id=self.id,
-                year=now.year,
-                month=now.month
-            ).order_by(PaymentTransaction.created_at.desc()).first()
-            last_amt = float(tx.amount) if tx and tx.amount is not None else None
-            last_time = tx.created_at.isoformat() if tx and tx.created_at else None
-        except Exception:
-            last_amt = None
-            last_time = None
-        try:
-            monthly_price = float(get_setting('monthly_price') or '0')
-        except Exception:
-            monthly_price = 0.0
+        # Keep to_dict focused on member attributes only (no per-request queries)
+        # Payment status/amount will be joined in API endpoints when needed.
+        last_amt = None
+        last_time = None
+        monthly_price = self.monthly_price
         display_training = None
         if self.custom_training and self.custom_training.strip():
             display_training = self.custom_training.strip()
@@ -330,16 +317,22 @@ class Member(db.Model):
             "email": self.email or '',
             "training_type": self.training_type or 'standard',
             "special_tag": bool(self.special_tag),
-            "current_fee_status": status,
-            "current_fee_amount": last_amt,
-            "last_tx_time": last_time,
-            "last_tx_amount": last_amt,
+            # Filled by API joins when requested
+            "current_fee_status": None,
+            "current_fee_amount": None,
+            "last_tx_time": None,
+            "last_tx_amount": None,
             "monthly_price": monthly_price,
             "custom_training": self.custom_training or '',
             "monthly_fee": self.monthly_fee,
             "display_training_type": display_training,
             "last_contact_at": self.last_contact_at.isoformat() if self.last_contact_at else None,
             "is_active": bool(self.is_active) if hasattr(self, 'is_active') else True,
+            "cnic": self.cnic,
+            "address": self.address,
+            "gender": self.gender,
+            "date_of_birth": self.date_of_birth.isoformat() if self.date_of_birth else None,
+            "notes": self.notes,
         }
 
 class Payment(db.Model):
@@ -348,7 +341,7 @@ class Payment(db.Model):
     year = db.Column(db.Integer, nullable=False, index=True)
     month = db.Column(db.Integer, nullable=False, index=True)  # 1-12
     status = db.Column(db.String(20), nullable=False, index=True)  # Paid/Unpaid/N/A
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     
     __table_args__ = (
         db.Index('idx_payment_year_month_status', 'year', 'month', 'status'),
@@ -369,7 +362,7 @@ class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
     password_hash = db.Column(db.String(255), nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     role = db.Column(db.String(20), default='staff')  # admin or staff
 
 class OAuthAccount(db.Model):
@@ -377,7 +370,7 @@ class OAuthAccount(db.Model):
     provider = db.Column(db.String(50), nullable=False)
     provider_id = db.Column(db.String(255), unique=True, nullable=False)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
 class PaymentTransaction(db.Model):
     __tablename__ = 'payment_transaction'
@@ -394,7 +387,7 @@ class PaymentTransaction(db.Model):
     month = db.Column(db.Integer, nullable=True)
     amount = db.Column(db.Float, nullable=True)
     method = db.Column(db.String(50), nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
 class Setting(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -403,7 +396,7 @@ class Setting(db.Model):
 
 class AuditLog(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     action = db.Column(db.String(100), nullable=False)
     data_json = db.Column(db.Text, nullable=False)
     prev_hash = db.Column(db.String(64), nullable=True)
@@ -416,7 +409,7 @@ class UploadedFile(db.Model):
     content_hash = db.Column(db.String(64), nullable=False, unique=True)
     rows_count = db.Column(db.Integer, nullable=False, default=0)
     rows_json = db.Column(db.Text, nullable=True)  # JSON snapshot of rows (truncated)
-    uploaded_at = db.Column(db.DateTime, default=datetime.utcnow)
+    uploaded_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
 
 class Product(db.Model):
@@ -427,18 +420,18 @@ class Product(db.Model):
     category = db.Column(db.String(80), nullable=True)
     sku = db.Column(db.String(60), unique=True, nullable=True)
     is_active = db.Column(db.Boolean, nullable=False, default=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
 class Attendance(db.Model):
     """Track member check-ins/check-outs"""
     id = db.Column(db.Integer, primary_key=True)
     member_id = db.Column(db.Integer, db.ForeignKey('member.id'), nullable=False)
-    check_in = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    check_in = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
     check_out = db.Column(db.DateTime, nullable=True)
     date = db.Column(db.Date, nullable=False)
     notes = db.Column(db.String(255), nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
     def to_dict(self):
         return {
@@ -1459,22 +1452,49 @@ def fees_page():
 @login_required
 def fees_api():
     try:
-        year = int(request.args.get('year') or datetime.now().year)
-        month = int(request.args.get('month') or datetime.now().month)
-    except ValueError:
+        # Use timezone-aware defaults when present
+        from datetime import timezone
+        year = int(request.args.get('year') or datetime.now(timezone.utc).year)
+        month = int(request.args.get('month') or datetime.now(timezone.utc).month)
+    except Exception:
         return jsonify({"error": "invalid year/month"}), 400
-    members = Member.query.order_by(Member.id).all()
+
+    # Single query with LEFT OUTER JOIN to include members without payments
+    query = db.session.query(
+        Member,
+        Payment.status
+    ).outerjoin(
+        Payment,
+        (Payment.member_id == Member.id) &
+        (Payment.year == year) &
+        (Payment.month == month)
+    ).order_by(Member.id)
+
+    member_payment_tuples = query.all()
     results = []
-    for m in members:
-        ensure_payment_rows(m, year)
-        p = Payment.query.filter_by(member_id=m.id, year=year, month=month).first()
-        status = p.status if p else 'Unpaid'
+
+    for member, status_from_join in member_payment_tuples:
+        m_dict = member.to_dict()
+
+        # Determine status based on join result and admission date
+        if status_from_join is None:
+            month_date = datetime(year, month, 1).date()
+            if month_date < member.admission_date:
+                current_status = 'N/A'
+            else:
+                current_status = 'Unpaid'
+        else:
+            current_status = status_from_join
+
+        m_dict['current_fee_status'] = current_status
+
         results.append({
-            'member': m.to_dict(),
+            'member': m_dict,
             'year': year,
             'month': month,
-            'status': status
+            'status': current_status
         })
+
     return jsonify(results)
 
 @app.route('/api/fees/remind', methods=['POST'])
@@ -2748,7 +2768,13 @@ def list_members():
                 # Also allow direct id matching
                 filters.append(Member.id == num)
         query = query.filter(or_(*filters))
-    members = query.order_by(Member.id.desc()).all()
+    # Sort A–Z by name for consistent listing
+    try:
+        from sqlalchemy import func
+        members = query.order_by(func.lower(Member.name).asc(), Member.id.asc()).all()
+    except Exception:
+        # Fallback if func is unavailable
+        members = query.order_by(Member.name.asc()).all()
     return jsonify([m.to_dict() for m in members])
 
 @app.route('/api/members/<int:member_id>', methods=['GET'])
