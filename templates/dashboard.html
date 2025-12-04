@@ -806,6 +806,9 @@
               <i class="bi bi-person-circle"></i> Complete Member Details
             </h5>
             <div class="ms-auto d-flex gap-2">
+              <button type="button" class="btn btn-sm btn-outline-danger" id="btnDeleteMember" onclick="deleteMemberConfirm()" title="Delete this member">
+                <i class="bi bi-trash"></i> Delete
+              </button>
               <button type="button" class="btn btn-sm btn-outline-warning" id="btnEditMember" onclick="toggleEditMode()">
                 <i class="bi bi-pencil-square"></i> Edit
               </button>
@@ -2626,6 +2629,55 @@
           }
         } catch (e) {
           showToast('Error updating member details', 'danger');
+          console.error(e);
+        }
+      }
+
+      function deleteMemberConfirm() {
+        const m = window.currentMemberData;
+        if (!m) {
+          showToast('No member selected', 'danger');
+          return;
+        }
+
+        // Create confirmation modal
+        const confirmed = confirm(`⚠️ Delete Member: ${m.name}?\n\nThis will permanently delete:\n- All member details\n- All payment records\n- All associated data\n\nThis action cannot be undone!`);
+        
+        if (confirmed) {
+          deleteMember(window.currentMemberId);
+        }
+      }
+
+      async function deleteMember(memberId) {
+        if (!memberId) {
+          showToast('No member selected', 'danger');
+          return;
+        }
+
+        try {
+          const res = await fetch(`/api/members/${memberId}`, {
+            method: 'DELETE',
+            headers: { 'Content-Type': 'application/json' }
+          });
+
+          const data = await res.json();
+          if (data.ok || res.ok) {
+            showToast('Member deleted successfully!', 'success');
+            
+            // Close modal
+            if (typeof memberDetailModal !== 'undefined' && memberDetailModal) {
+              memberDetailModal.hide();
+            }
+            
+            // Refresh members list
+            if (typeof loadMembers === 'function') {
+              setTimeout(() => loadMembers(), 500);
+            }
+          } else {
+            showToast('Failed to delete: ' + (data.error || 'Unknown error'), 'danger');
+          }
+        } catch (e) {
+          showToast('Error deleting member', 'danger');
           console.error(e);
         }
       }
