@@ -2957,42 +2957,52 @@
         }, 2000);
       }
       
-      // Auto-save version (silent feedback)
+      // Auto-save version (silent feedback with toast)
       async function saveMemberDetailsAuto() {
         const memberId = window.currentMemberId;
         if (!memberId || !memberFormHasChanges) return;
+        
         const monthlyFeeVal = document.getElementById('editMonthlyFee').value;
+        const trainingTypeVal = document.getElementById('editTraining').value;
         const updatedData = {
-          name: document.getElementById('editName').value || '',
-          phone: document.getElementById('editPhone').value || '',
-          email: document.getElementById('editEmail').value || '',
-          cnic: document.getElementById('editCNIC').value || '',
-          address: document.getElementById('editAddress').value || '',
-          gender: document.getElementById('editGender').value || '',
+          name: (document.getElementById('editName').value || '').trim(),
+          phone: (document.getElementById('editPhone').value || '').trim(),
+          email: (document.getElementById('editEmail').value || '').trim(),
+          cnic: (document.getElementById('editCNIC').value || '').trim(),
+          address: (document.getElementById('editAddress').value || '').trim(),
+          gender: (document.getElementById('editGender').value || '').trim(),
           date_of_birth: document.getElementById('editDOB').value || '',
           admission_date: document.getElementById('editAdmission').value || '',
-          monthly_price: monthlyFeeVal ? parseFloat(monthlyFeeVal) : '',
-          referred_by: document.getElementById('editReferred').value || '',
+          monthly_price: monthlyFeeVal ? parseFloat(monthlyFeeVal) : null,
+          referred_by: (document.getElementById('editReferred').value || '').trim(),
           is_active: document.getElementById('editStatus').value === '1',
-          notes: document.getElementById('editNotes').value || ''
+          notes: (document.getElementById('editNotes').value || '').trim(),
+          training_type: trainingTypeVal || 'standard',
+          special_tag: document.getElementById('editSpecial').checked || false,
+          custom_training: (document.getElementById('editCustom').value || '').trim() || null
         };
+        
+        console.log('Auto-save - Member:', memberId, updatedData);
+        
         try {
           const res = await fetch(`/api/members/${memberId}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(updatedData)
           });
+          
           const data = await res.json();
-          if (data.ok || res.ok) {
+          if (res.ok && (data.ok || data.success)) {
             memberFormHasChanges = false;
-            const saveBtn = document.getElementById('btnSaveMember');
-            const origHTML = saveBtn.innerHTML;
-            saveBtn.innerHTML = '<i class="bi bi-check-circle text-success"></i> Saved';
-            setTimeout(() => { saveBtn.innerHTML = origHTML; }, 1500);
+            showToast('✓ Auto-saved', 'success');
             if (typeof loadMembers === 'function') loadMembers();
+          } else {
+            console.error('Auto-save failed:', data);
+            showToast('Auto-save failed: ' + (data.error || 'Unknown error'), 'warning');
           }
         } catch (e) {
           console.error('Auto-save error:', e);
+          showToast('Auto-save error: ' + e.message, 'warning');
         }
       }
       
@@ -3028,30 +3038,40 @@
           return;
         }
 
+        // Validate required fields
+        if (!validateMemberForm()) {
+          showToast('Please fill in all required fields', 'warning');
+          return;
+        }
+
         // Disable save button and show loading state
         const saveBtn = document.getElementById('btnSaveMember');
         const originalText = saveBtn.innerHTML;
         saveBtn.disabled = true;
         saveBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Saving...';
 
-        // Collect updated data
+        // Collect updated data - all fields from form
         const monthlyFeeVal = document.getElementById('editMonthlyFee').value;
+        const trainingTypeVal = document.getElementById('editTraining').value;
         const updatedData = {
-          name: document.getElementById('editName').value || '',
-          phone: document.getElementById('editPhone').value || '',
-          email: document.getElementById('editEmail').value || '',
-          cnic: document.getElementById('editCNIC').value || '',
-          address: document.getElementById('editAddress').value || '',
-          gender: document.getElementById('editGender').value || '',
+          name: (document.getElementById('editName').value || '').trim(),
+          phone: (document.getElementById('editPhone').value || '').trim(),
+          email: (document.getElementById('editEmail').value || '').trim(),
+          cnic: (document.getElementById('editCNIC').value || '').trim(),
+          address: (document.getElementById('editAddress').value || '').trim(),
+          gender: (document.getElementById('editGender').value || '').trim(),
           date_of_birth: document.getElementById('editDOB').value || '',
           admission_date: document.getElementById('editAdmission').value || '',
-          monthly_price: monthlyFeeVal ? parseFloat(monthlyFeeVal) : '',
-          referred_by: document.getElementById('editReferred').value || '',
+          monthly_price: monthlyFeeVal ? parseFloat(monthlyFeeVal) : null,
+          referred_by: (document.getElementById('editReferred').value || '').trim(),
           is_active: document.getElementById('editStatus').value === '1',
-          notes: document.getElementById('editNotes').value || ''
+          notes: (document.getElementById('editNotes').value || '').trim(),
+          training_type: trainingTypeVal || 'standard',
+          special_tag: document.getElementById('editSpecial').checked || false,
+          custom_training: (document.getElementById('editCustom').value || '').trim() || null
         };
 
-        console.log('Saving member:', memberId, updatedData);
+        console.log('Manual save - Member:', memberId, updatedData);
 
         try {
           const res = await fetch(`/api/members/${memberId}`, {
@@ -3064,14 +3084,17 @@
           const data = await res.json();
           console.log('Response data:', data);
           
-          if (data.ok || res.ok) {
+          if (res.ok && (data.ok || data.success)) {
             showToast('✓ Member details saved successfully!', 'success');
+            memberFormHasChanges = false;
             // Reload member detail to reflect changes
             await showMemberDetail(memberId);
             // Refresh members list if on members page
             if (typeof loadMembers === 'function') loadMembers();
           } else {
-            showToast('Failed to save: ' + (data.error || 'Unknown error'), 'danger');
+            const errorMsg = data.error || data.message || 'Unknown error';
+            showToast('Failed to save: ' + errorMsg, 'danger');
+            console.error('Save failed:', data);
           }
         } catch (e) {
           showToast('Error saving member details: ' + e.message, 'danger');
