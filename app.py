@@ -273,8 +273,15 @@ class Member(db.Model):
     special_tag = db.Column(db.Boolean, default=False)
     custom_training = db.Column(db.String(50), nullable=True)
     monthly_fee = db.Column(db.Float, nullable=True)
+    monthly_price = db.Column(db.Float, nullable=True)  # Per-member monthly price (if different from global setting)
     last_contact_at = db.Column(db.DateTime, nullable=True)
     is_active = db.Column(db.Boolean, default=True)  # Member active/inactive status
+    # Additional member details
+    cnic = db.Column(db.String(50), nullable=True)
+    address = db.Column(db.Text, nullable=True)
+    gender = db.Column(db.String(20), nullable=True)
+    date_of_birth = db.Column(db.Date, nullable=True)
+    notes = db.Column(db.Text, nullable=True)
 
     def to_dict(self):
         # Compute current month fee status and last recorded amount
@@ -2152,15 +2159,15 @@ def member_payment_history(member_id):
             'name': member.name,
             'phone': member.phone,
             'email': member.email or '',
-            # 'cnic': member.cnic,  # Removed because attribute does not exist
-            # 'address': member.address,  # Removed because attribute does not exist
-            # 'gender': member.gender,  # Removed because attribute does not exist
-            # 'date_of_birth': member.date_of_birth.strftime('%Y-%m-%d') if member.date_of_birth else None,  # Removed
+            'cnic': member.cnic or '',
+            'address': member.address or '',
+            'gender': member.gender or '',
+            'date_of_birth': member.date_of_birth.strftime('%Y-%m-%d') if member.date_of_birth else None,
             'admission_date': member.admission_date.strftime('%Y-%m-%d') if member.admission_date else None,
-            'monthly_price': float(member.monthly_fee) if member.monthly_fee else 0,
-            'referred_by': member.referred_by,
-            'is_active': getattr(member, 'is_active', True),
-            # 'notes': member.notes  # Removed because attribute does not exist
+            'monthly_price': float(member.monthly_price or member.monthly_fee or 0),
+            'referred_by': member.referred_by or '',
+            'is_active': member.is_active,
+            'notes': member.notes or ''
         },
         'last_paid_month': last_paid,
         'months_unpaid': months_unpaid,
@@ -2560,11 +2567,11 @@ def update_member(member_id):
         try:
             val = data.get('monthly_price')
             if val not in (None, ''):
-                old_values['monthly_price'] = m.monthly_price
-                m.monthly_price = float(val); changed['monthly_price'] = m.monthly_price
+                old_values['monthly_price'] = m.monthly_fee
+                m.monthly_fee = float(val); changed['monthly_price'] = m.monthly_fee
             elif val in (None, ''):
-                old_values['monthly_price'] = m.monthly_price
-                m.monthly_price = None; changed['monthly_price'] = None
+                old_values['monthly_price'] = m.monthly_fee
+                m.monthly_fee = None; changed['monthly_price'] = None
         except Exception:
             pass
     
