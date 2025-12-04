@@ -149,6 +149,14 @@
           >
             <i class="bi bi-bell me-1"></i>Send Reminders
           </button>
+          <button
+            id="btnExportAll"
+            class="btn btn-outline-success btn-sm"
+            title="Export all members data to Excel"
+            onclick="exportAllMembersData()"
+          >
+            <i class="bi bi-file-earmark-excel me-1"></i>Export All Members
+          </button>
         </div>
         <div class="col-md-3">
           <a class="text-decoration-none" href="/members">
@@ -969,6 +977,9 @@
           <div class="modal-footer">
             <button type="button" class="btn btn-info" onclick="openBulkPaymentModal()" title="Mark multiple months as paid">
               <i class="bi bi-cash-coin"></i> Bulk Mark Paid
+            </button>
+            <button type="button" class="btn btn-outline-success" onclick="exportMemberData()" title="Export member data to Excel">
+              <i class="bi bi-file-earmark-excel"></i> Export to Excel
             </button>
             <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Close</button>
           </div>
@@ -2894,6 +2905,68 @@
         } finally {
           btn.disabled = false;
           btn.innerHTML = '<i class="bi bi-cash-coin"></i> Mark as Paid';
+        }
+      }
+
+      function exportMemberData() {
+        if (!window.currentMemberId) {
+          showToast('No member selected', 'danger');
+          return;
+        }
+
+        const memberId = window.currentMemberId;
+        const memberName = window.currentMemberData?.name || 'member';
+        
+        try {
+          const link = document.createElement('a');
+          link.href = `/api/members/${memberId}/export`;
+          link.download = `${memberName}_payments.xlsx`;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          showToast(`Exported ${memberName}'s data to Excel`, 'success');
+        } catch (e) {
+          showToast('Error exporting data', 'danger');
+          console.error(e);
+        }
+      }
+
+      async function exportAllMembersData() {
+        const btn = document.getElementById('btnExportAll');
+        btn.disabled = true;
+        const originalHtml = btn.innerHTML;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Exporting...';
+
+        try {
+          const response = await fetch('/api/members/export/all');
+          
+          if (!response.ok) {
+            showToast('Export failed', 'danger');
+            return;
+          }
+
+          const blob = await response.blob();
+          const url = window.URL.createObjectURL(blob);
+          const link = document.createElement('a');
+          link.href = url;
+          
+          // Get timestamp for filename
+          const now = new Date();
+          const timestamp = now.toISOString().split('T')[0];
+          link.download = `all_members_${timestamp}.xlsx`;
+          
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          window.URL.revokeObjectURL(url);
+          
+          showToast('All members exported successfully to Excel', 'success');
+        } catch (e) {
+          showToast('Error exporting members data', 'danger');
+          console.error(e);
+        } finally {
+          btn.disabled = false;
+          btn.innerHTML = originalHtml;
         }
       }
     </script>

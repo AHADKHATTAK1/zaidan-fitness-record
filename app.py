@@ -2816,6 +2816,44 @@ def export_member(member_id):
     df.to_excel(out_path, index=False)
     return send_file(out_path, as_attachment=True)
 
+# Export all members data to excel
+@app.route('/api/members/export/all', methods=['GET'])
+@login_required
+def export_all_members():
+    try:
+        members = Member.query.all()
+        rows = []
+        for m in members:
+            payments = Payment.query.filter_by(member_id=m.id).order_by(Payment.year, Payment.month).all()
+            total_paid = sum(1 for p in payments if p.status == 'Paid')
+            total_unpaid = sum(1 for p in payments if p.status == 'Unpaid')
+            
+            rows.append({
+                'Member ID': m.id,
+                'Name': m.name,
+                'Phone': m.phone or '',
+                'Email': m.email or '',
+                'CNIC': m.cnic or '',
+                'Address': m.address or '',
+                'Gender': m.gender or '',
+                'DOB': m.dob.strftime('%Y-%m-%d') if m.dob else '',
+                'Admission Date': m.admission_date.strftime('%Y-%m-%d'),
+                'Monthly Fee': m.monthly_price or 0,
+                'Referred By': m.referred_by or '',
+                'Status': 'Active' if m.is_active else 'Inactive',
+                'Notes': m.notes or '',
+                'Total Paid Months': total_paid,
+                'Total Unpaid Months': total_unpaid,
+                'Created': m.created.strftime('%Y-%m-%d %H:%M:%S') if m.created else ''
+            })
+        
+        df = pd.DataFrame(rows)
+        out_path = os.path.join(BASE_DIR, 'all_members_export.xlsx')
+        df.to_excel(out_path, index=False)
+        return send_file(out_path, as_attachment=True, download_name=f'all_members_{datetime.now().strftime("%Y%m%d")}.xlsx')
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
 def ensure_payment_rows(member: Member, year: int):
     # Create payment rows for a year if missing
     existing = {(p.month) for p in Payment.query.filter_by(member_id=member.id, year=year).all()}
