@@ -842,14 +842,8 @@
               <button type="button" class="btn btn-sm btn-outline-danger" id="btnDeleteMember" onclick="deleteMemberConfirm()" title="Delete this member">
                 <i class="bi bi-trash"></i> Delete
               </button>
-              <button type="button" class="btn btn-sm btn-outline-warning" id="btnEditMember" onclick="toggleEditMode()">
-                <i class="bi bi-pencil-square"></i> Edit
-              </button>
-              <button type="button" class="btn btn-sm btn-success d-none" id="btnSaveMember" onclick="saveMemberDetails()">
-                <i class="bi bi-check-circle"></i> Save
-              </button>
-              <button type="button" class="btn btn-sm btn-secondary d-none" id="btnCancelEdit" onclick="cancelEditMode()">
-                <i class="bi bi-x-circle"></i> Cancel
+              <button type="button" class="btn btn-sm btn-success" id="btnSaveMember" onclick="saveMemberDetails()">
+                <i class="bi bi-check-circle"></i> Update Member
               </button>
               <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
@@ -863,33 +857,27 @@
                 <div class="row g-3">
                   <div class="col-md-3">
                     <small class="text-muted">Full Name</small>
-                    <div id="detailName" class="fw-bold member-detail-view">-</div>
-                    <input type="text" id="editName" class="form-control form-control-sm d-none member-detail-edit" />
+                    <input type="text" id="editName" class="form-control form-control-sm" />
                   </div>
                   <div class="col-md-3">
                     <small class="text-muted">Phone</small>
-                    <div id="detailPhone" class="member-detail-view">-</div>
-                    <input type="text" id="editPhone" class="form-control form-control-sm d-none member-detail-edit" />
+                    <input type="text" id="editPhone" class="form-control form-control-sm" />
                   </div>
                   <div class="col-md-3">
                     <small class="text-muted">Email</small>
-                    <div id="detailEmail" class="member-detail-view">-</div>
-                    <input type="email" id="editEmail" class="form-control form-control-sm d-none member-detail-edit" />
+                    <input type="email" id="editEmail" class="form-control form-control-sm" />
                   </div>
                   <div class="col-md-3">
                     <small class="text-muted">CNIC</small>
-                    <div id="detailCNIC" class="member-detail-view">-</div>
-                    <input type="text" id="editCNIC" class="form-control form-control-sm d-none member-detail-edit" />
+                    <input type="text" id="editCNIC" class="form-control form-control-sm" />
                   </div>
                   <div class="col-md-6">
                     <small class="text-muted">Address</small>
-                    <div id="detailAddress" class="member-detail-view">-</div>
-                    <textarea id="editAddress" class="form-control form-control-sm d-none member-detail-edit" rows="2"></textarea>
+                    <textarea id="editAddress" class="form-control form-control-sm" rows="2"></textarea>
                   </div>
                   <div class="col-md-3">
                     <small class="text-muted">Gender</small>
-                    <div id="detailGender" class="member-detail-view">-</div>
-                    <select id="editGender" class="form-select form-select-sm d-none member-detail-edit">
+                    <select id="editGender" class="form-select form-select-sm">
                       <option value="">Select</option>
                       <option value="Male">Male</option>
                       <option value="Female">Female</option>
@@ -898,8 +886,7 @@
                   </div>
                   <div class="col-md-3">
                     <small class="text-muted">Date of Birth</small>
-                    <div id="detailDOB" class="member-detail-view">-</div>
-                    <input type="date" id="editDOB" class="form-control form-control-sm d-none member-detail-edit" />
+                    <input type="date" id="editDOB" class="form-control form-control-sm" />
                   </div>
                 </div>
               </div>
@@ -922,31 +909,26 @@
                 <div class="row g-3">
                   <div class="col-md-3">
                     <small class="text-muted">Admission Date</small>
-                    <div id="detailAdmission" class="fw-bold member-detail-view">-</div>
-                    <input type="date" id="editAdmission" class="form-control form-control-sm d-none member-detail-edit" />
+                    <input type="date" id="editAdmission" class="form-control form-control-sm" />
                   </div>
                   <div class="col-md-3">
                     <small class="text-muted">Monthly Fee</small>
-                    <div id="detailMonthlyFee" class="text-warning member-detail-view">-</div>
-                    <input type="number" id="editMonthlyFee" class="form-control form-control-sm d-none member-detail-edit" />
+                    <input type="number" id="editMonthlyFee" class="form-control form-control-sm" />
                   </div>
                   <div class="col-md-3">
                     <small class="text-muted">Referred By</small>
-                    <div id="detailReferred" class="member-detail-view">-</div>
-                    <input type="text" id="editReferred" class="form-control form-control-sm d-none member-detail-edit" />
+                    <input type="text" id="editReferred" class="form-control form-control-sm" />
                   </div>
                   <div class="col-md-3">
                     <small class="text-muted">Status</small>
-                    <div id="detailStatus" class="member-detail-view">-</div>
-                    <select id="editStatus" class="form-select form-select-sm d-none member-detail-edit">
+                    <select id="editStatus" class="form-select form-select-sm">
                       <option value="1">Active</option>
                       <option value="0">Inactive</option>
                     </select>
                   </div>
                   <div class="col-md-12">
                     <small class="text-muted">Notes</small>
-                    <div id="detailNotes" class="text-muted fst-italic member-detail-view">-</div>
-                    <textarea id="editNotes" class="form-control form-control-sm d-none member-detail-edit" rows="3"></textarea>
+                    <textarea id="editNotes" class="form-control form-control-sm" rows="3"></textarea>
                   </div>
                 </div>
               </div>
@@ -2598,20 +2580,19 @@
                     m = data.member;
                     window.currentMemberId = memberId;
                     window.currentMemberData = m;
-                    // Personal Information
-                    document.getElementById('detailName').textContent = m.name || '-';
-                    document.getElementById('detailPhone').textContent = m.phone || '-';
-                    document.getElementById('detailEmail').textContent = m.email || '-';
-                    document.getElementById('detailCNIC').textContent = m.cnic || '-';
-                    document.getElementById('detailAddress').textContent = m.address || '-';
-                    document.getElementById('detailGender').textContent = m.gender || '-';
-                    document.getElementById('detailDOB').textContent = m.date_of_birth || '-';
-                    // Membership Details
-                    document.getElementById('detailAdmission').textContent = m.admission_date || '-';
-                    document.getElementById('detailMonthlyFee').textContent = m.monthly_price ? ((data.currency || 'PKR') + ' ' + m.monthly_price.toLocaleString()) : '-';
-                    document.getElementById('detailReferred').textContent = m.referred_by || '-';
-                    document.getElementById('detailStatus').innerHTML = m.is_active ? '<span class="badge bg-success">Active</span>' : '<span class="badge bg-secondary">Inactive</span>';
-                    document.getElementById('detailNotes').textContent = m.notes || 'No notes';
+                    // Populate edit fields with member data (always-on editing)
+                    document.getElementById('editName').value = m.name || '';
+                    document.getElementById('editPhone').value = m.phone || '';
+                    document.getElementById('editEmail').value = m.email || '';
+                    document.getElementById('editCNIC').value = m.cnic || '';
+                    document.getElementById('editAddress').value = m.address || '';
+                    document.getElementById('editGender').value = m.gender || '';
+                    document.getElementById('editDOB').value = m.date_of_birth || '';
+                    document.getElementById('editAdmission').value = m.admission_date || '';
+                    document.getElementById('editMonthlyFee').value = m.monthly_price || '';
+                    document.getElementById('editReferred').value = m.referred_by || '';
+                    document.getElementById('editStatus').value = m.is_active ? '1' : '0';
+                    document.getElementById('editNotes').value = m.notes || '';
                     // Payment Statistics
                     var paidPayments = data.payments.filter(function(p){return p.status === 'Paid';});
                     var unpaidPayments = data.payments.filter(function(p){return p.status === 'Unpaid';});
@@ -2935,45 +2916,6 @@
       }
 
       // Edit mode functions
-      function toggleEditMode() {
-        // Switch to edit mode
-        document.querySelectorAll('.member-detail-view').forEach(el => el.classList.add('d-none'));
-        document.querySelectorAll('.member-detail-edit').forEach(el => el.classList.remove('d-none'));
-        
-        // Populate edit fields with current values
-        const m = window.currentMemberData;
-        if (m) {
-          document.getElementById('editName').value = m.name || '';
-          document.getElementById('editPhone').value = m.phone || '';
-          document.getElementById('editEmail').value = m.email || '';
-          document.getElementById('editCNIC').value = m.cnic || '';
-          document.getElementById('editAddress').value = m.address || '';
-          document.getElementById('editGender').value = m.gender || '';
-          document.getElementById('editDOB').value = m.date_of_birth || '';
-          document.getElementById('editAdmission').value = m.admission_date || '';
-          document.getElementById('editMonthlyFee').value = m.monthly_price || '';
-          document.getElementById('editReferred').value = m.referred_by || '';
-          document.getElementById('editStatus').value = m.is_active ? '1' : '0';
-          document.getElementById('editNotes').value = m.notes || '';
-        }
-        
-        // Toggle buttons
-        document.getElementById('btnEditMember').classList.add('d-none');
-        document.getElementById('btnSaveMember').classList.remove('d-none');
-        document.getElementById('btnCancelEdit').classList.remove('d-none');
-      }
-
-      function cancelEditMode() {
-        // Switch back to view mode
-        document.querySelectorAll('.member-detail-edit').forEach(el => el.classList.add('d-none'));
-        document.querySelectorAll('.member-detail-view').forEach(el => el.classList.remove('d-none'));
-        
-        // Toggle buttons
-        document.getElementById('btnEditMember').classList.remove('d-none');
-        document.getElementById('btnSaveMember').classList.add('d-none');
-        document.getElementById('btnCancelEdit').classList.add('d-none');
-      }
-
       async function saveMemberDetails() {
         const memberId = window.currentMemberId;
         if (!memberId) {
@@ -3009,7 +2951,6 @@
             showToast('Member details updated successfully!', 'success');
             // Reload member detail to reflect changes
             await showMemberDetail(memberId);
-            cancelEditMode();
             // Refresh members list if on members page
             if (typeof loadMembers === 'function') loadMembers();
           } else {
