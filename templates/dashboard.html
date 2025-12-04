@@ -805,7 +805,14 @@
             <h5 class="modal-title">
               <i class="bi bi-person-circle"></i> Complete Member Details
             </h5>
-            <div class="ms-auto d-flex gap-2">
+            <div class="ms-auto d-flex gap-2 align-items-center">
+              <button type="button" class="btn btn-sm btn-outline-secondary" id="btnPrevMember" onclick="navigateMember(-1)" title="Previous member">
+                <i class="bi bi-chevron-left"></i>
+              </button>
+              <input type="text" id="memberSearchInput" class="form-control form-control-sm" placeholder="Search members..." style="width: 200px;" onkeyup="filterMemberSearch(event)" />
+              <button type="button" class="btn btn-sm btn-outline-secondary" id="btnNextMember" onclick="navigateMember(1)" title="Next member">
+                <i class="bi bi-chevron-right"></i>
+              </button>
               <button type="button" class="btn btn-sm btn-outline-danger" id="btnDeleteMember" onclick="deleteMemberConfirm()" title="Delete this member">
                 <i class="bi bi-trash"></i> Delete
               </button>
@@ -2121,6 +2128,16 @@
               if(modalEl) currentMonthlyFeesModal = new bootstrap.Modal(modalEl);
               if(memberModalEl) memberDetailModal = new bootstrap.Modal(memberModalEl);
               
+              // Load all members for navigation
+              fetch('/api/members')
+                .then(res => res.json())
+                .then(members => {
+                  if (Array.isArray(members)) {
+                    setAllMembers(members);
+                  }
+                })
+                .catch(e => console.warn('Could not load members for navigation:', e));
+              
               modalEl?.addEventListener('shown.bs.modal', function(){
                 loadCurrentMonthFees();
                 loadUnpaidMembers();
@@ -2679,6 +2696,65 @@
         } catch (e) {
           showToast('Error deleting member', 'danger');
           console.error(e);
+        }
+      }
+
+      // Member navigation functions
+      window.allMembersData = [];
+      window.currentMemberIndex = -1;
+
+      function setAllMembers(members) {
+        window.allMembersData = members || [];
+        window.currentMemberIndex = -1;
+      }
+
+      function navigateMember(direction) {
+        if (window.allMembersData.length === 0) {
+          showToast('No members available', 'warning');
+          return;
+        }
+        
+        const currentId = window.currentMemberId;
+        let nextIndex = window.allMembersData.findIndex(m => m.id === currentId);
+        
+        if (nextIndex === -1) {
+          nextIndex = 0;
+        } else {
+          nextIndex = (nextIndex + direction) % window.allMembersData.length;
+          if (nextIndex < 0) nextIndex = window.allMembersData.length - 1;
+        }
+        
+        const nextMember = window.allMembersData[nextIndex];
+        if (nextMember) {
+          showMemberDetail(nextMember.id);
+        }
+      }
+
+      function filterMemberSearch(event) {
+        const query = event.target.value.toLowerCase().trim();
+        if (!query) {
+          showToast('Type member name or phone to search', 'info');
+          return;
+        }
+
+        const matches = window.allMembersData.filter(m => 
+          (m.name && m.name.toLowerCase().includes(query)) ||
+          (m.phone && m.phone.includes(query))
+        );
+
+        if (matches.length === 0) {
+          showToast('No matching members found', 'warning');
+          return;
+        }
+
+        if (matches.length === 1) {
+          showMemberDetail(matches[0].id);
+          document.getElementById('memberSearchInput').value = '';
+        } else {
+          // Show first match and notify
+          showMemberDetail(matches[0].id);
+          showToast(`Found ${matches.length} matches. Showing first member.`, 'info');
+          document.getElementById('memberSearchInput').value = '';
         }
       }
     </script>
