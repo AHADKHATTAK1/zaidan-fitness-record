@@ -842,8 +842,11 @@
               <button type="button" class="btn btn-sm btn-outline-danger" id="btnDeleteMember" onclick="deleteMemberConfirm()" title="Delete this member">
                 <i class="bi bi-trash"></i> Delete
               </button>
+              <button type="button" class="btn btn-sm btn-outline-secondary" id="btnResetMember" onclick="resetMemberForm()" title="Reset to original values">
+                <i class="bi bi-arrow-counterclockwise"></i> Reset
+              </button>
               <button type="button" class="btn btn-sm btn-success" id="btnSaveMember" onclick="saveMemberDetails()">
-                <i class="bi bi-check-circle"></i> Update Member
+                <i class="bi bi-check-circle"></i> Save Changes
               </button>
               <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
             </div>
@@ -2915,6 +2918,31 @@
         }
       }
 
+      // Reset form to original member data
+      function resetMemberForm() {
+        const m = window.currentMemberData;
+        if (!m) {
+          showToast('No member data to reset', 'warning');
+          return;
+        }
+        
+        // Repopulate form with original values
+        document.getElementById('editName').value = m.name || '';
+        document.getElementById('editPhone').value = m.phone || '';
+        document.getElementById('editEmail').value = m.email || '';
+        document.getElementById('editCNIC').value = m.cnic || '';
+        document.getElementById('editAddress').value = m.address || '';
+        document.getElementById('editGender').value = m.gender || '';
+        document.getElementById('editDOB').value = m.date_of_birth || '';
+        document.getElementById('editAdmission').value = m.admission_date || '';
+        document.getElementById('editMonthlyFee').value = m.monthly_price || '';
+        document.getElementById('editReferred').value = m.referred_by || '';
+        document.getElementById('editStatus').value = m.is_active ? '1' : '0';
+        document.getElementById('editNotes').value = m.notes || '';
+        
+        showToast('Form reset to original values', 'info');
+      }
+
       // Edit mode functions
       async function saveMemberDetails() {
         const memberId = window.currentMemberId;
@@ -2922,6 +2950,12 @@
           showToast('No member selected', 'danger');
           return;
         }
+
+        // Disable save button and show loading state
+        const saveBtn = document.getElementById('btnSaveMember');
+        const originalText = saveBtn.innerHTML;
+        saveBtn.disabled = true;
+        saveBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Saving...';
 
         // Collect updated data
         const monthlyFeeVal = document.getElementById('editMonthlyFee').value;
@@ -2954,17 +2988,21 @@
           console.log('Response data:', data);
           
           if (data.ok || res.ok) {
-            showToast('Member details updated successfully!', 'success');
+            showToast('✓ Member details saved successfully!', 'success');
             // Reload member detail to reflect changes
             await showMemberDetail(memberId);
             // Refresh members list if on members page
             if (typeof loadMembers === 'function') loadMembers();
           } else {
-            showToast('Failed to update: ' + (data.error || 'Unknown error'), 'danger');
+            showToast('Failed to save: ' + (data.error || 'Unknown error'), 'danger');
           }
         } catch (e) {
-          showToast('Error updating member details: ' + e.message, 'danger');
-          console.error('Update error:', e);
+          showToast('Error saving member details: ' + e.message, 'danger');
+          console.error('Save error:', e);
+        } finally {
+          // Re-enable button
+          saveBtn.disabled = false;
+          saveBtn.innerHTML = originalText;
         }
       }
 

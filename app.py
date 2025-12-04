@@ -2510,84 +2510,120 @@ def update_member(member_id):
     # Personal Information
     if 'name' in data:
         name = (data.get('name') or '').strip()
-        old_values['name'] = m.name
-        m.name = name or None; changed['name'] = m.name
+        new_val = name or None
+        if m.name != new_val:
+            old_values['name'] = m.name
+            m.name = new_val
+            changed['name'] = m.name
     
     if 'phone' in data:
         phone = (data.get('phone') or '').strip()
-        old_values['phone'] = m.phone
-        m.phone = phone or None; changed['phone'] = m.phone
+        new_val = phone or None
+        if m.phone != new_val:
+            old_values['phone'] = m.phone
+            m.phone = new_val
+            changed['phone'] = m.phone
     
     if 'email' in data:
         email = (data.get('email') or '').strip()
-        old_values['email'] = m.email
-        m.email = email or None; changed['email'] = m.email
+        new_val = email or None
+        if m.email != new_val:
+            old_values['email'] = m.email
+            m.email = new_val
+            changed['email'] = m.email
     
     if 'cnic' in data:
         cnic = (data.get('cnic') or '').strip()
-        old_values['cnic'] = m.cnic
-        m.cnic = cnic or None; changed['cnic'] = m.cnic
+        new_val = cnic or None
+        if m.cnic != new_val:
+            old_values['cnic'] = m.cnic
+            m.cnic = new_val
+            changed['cnic'] = m.cnic
     
     if 'address' in data:
         address = (data.get('address') or '').strip()
-        old_values['address'] = m.address
-        m.address = address or None; changed['address'] = m.address
+        new_val = address or None
+        if m.address != new_val:
+            old_values['address'] = m.address
+            m.address = new_val
+            changed['address'] = m.address
     
     if 'gender' in data:
         gender = (data.get('gender') or '').strip()
-        old_values['gender'] = m.gender
-        m.gender = gender or None; changed['gender'] = m.gender
+        new_val = gender or None
+        if m.gender != new_val:
+            old_values['gender'] = m.gender
+            m.gender = new_val
+            changed['gender'] = m.gender
     
     if 'date_of_birth' in data:
         dob = (data.get('date_of_birth') or '').strip()
         if dob:
             try:
-                old_values['date_of_birth'] = m.date_of_birth.isoformat() if m.date_of_birth else None
-                m.date_of_birth = datetime.fromisoformat(dob).date(); changed['date_of_birth'] = m.date_of_birth.isoformat()
+                new_dob = datetime.fromisoformat(dob).date()
+                if m.date_of_birth != new_dob:
+                    old_values['date_of_birth'] = m.date_of_birth.isoformat() if m.date_of_birth else None
+                    m.date_of_birth = new_dob
+                    changed['date_of_birth'] = m.date_of_birth.isoformat()
             except Exception:
                 pass
         else:
-            old_values['date_of_birth'] = m.date_of_birth.isoformat() if m.date_of_birth else None
-            m.date_of_birth = None; changed['date_of_birth'] = None
+            if m.date_of_birth is not None:
+                old_values['date_of_birth'] = m.date_of_birth.isoformat()
+                m.date_of_birth = None
+                changed['date_of_birth'] = None
     
     # Membership Details
     if 'admission_date' in data:
         admission = (data.get('admission_date') or '').strip()
         if admission:
             try:
-                old_values['admission_date'] = m.admission_date.isoformat() if m.admission_date else None
-                m.admission_date = datetime.fromisoformat(admission).date(); changed['admission_date'] = m.admission_date.isoformat()
+                new_admission = datetime.fromisoformat(admission).date()
+                if m.admission_date != new_admission:
+                    old_values['admission_date'] = m.admission_date.isoformat() if m.admission_date else None
+                    m.admission_date = new_admission
+                    changed['admission_date'] = m.admission_date.isoformat()
             except Exception:
                 pass
         else:
-            old_values['admission_date'] = m.admission_date.isoformat() if m.admission_date else None
-            m.admission_date = None; changed['admission_date'] = None
+            if m.admission_date is not None:
+                old_values['admission_date'] = m.admission_date.isoformat()
+                m.admission_date = None
+                changed['admission_date'] = None
     
     if 'monthly_price' in data:
         try:
             val = data.get('monthly_price')
-            if val not in (None, ''):
+            new_fee = float(val) if val not in (None, '') else None
+            if m.monthly_fee != new_fee:
                 old_values['monthly_price'] = m.monthly_fee
-                m.monthly_fee = float(val); changed['monthly_price'] = m.monthly_fee
-            elif val in (None, ''):
-                old_values['monthly_price'] = m.monthly_fee
-                m.monthly_fee = None; changed['monthly_price'] = None
+                m.monthly_fee = new_fee
+                changed['monthly_price'] = m.monthly_fee
         except Exception:
             pass
     
     if 'referred_by' in data:
         referred_by = (data.get('referred_by') or '').strip()
-        old_values['referred_by'] = m.referred_by
-        m.referred_by = referred_by or None; changed['referred_by'] = m.referred_by
+        new_val = referred_by or None
+        if m.referred_by != new_val:
+            old_values['referred_by'] = m.referred_by
+            m.referred_by = new_val
+            changed['referred_by'] = m.referred_by
     
     if 'is_active' in data:
-        old_values['is_active'] = m.is_active
-        m.is_active = bool(data.get('is_active')); changed['is_active'] = m.is_active
+        new_active = bool(data.get('is_active'))
+        if m.is_active != new_active:
+            old_values['is_active'] = m.is_active
+            m.is_active = new_active
+            changed['is_active'] = m.is_active
     
     if 'notes' in data:
         notes = (data.get('notes') or '').strip()
-        old_values['notes'] = m.notes
-        m.notes = notes or None; changed['notes'] = m.notes
+        new_val = notes or None
+        if m.notes != new_val:
+            old_values['notes'] = m.notes
+            m.notes = new_val
+            changed['notes'] = m.notes
     
     # Legacy fields support
     if 'plan_type' in data:
@@ -2630,14 +2666,18 @@ def update_member(member_id):
         old_values['special_tag'] = m.special_tag
         m.special_tag = bool(data.get('special_tag')); changed['special_tag'] = bool(data.get('special_tag'))
     
+    # Always commit the session to save any changes
+    db.session.commit()
+    
+    # Only create audit log if there were actual changes
     if changed:
-        db.session.commit()
         append_audit('member.update', {
             'member_id': m.id, 
             'old': old_values, 
             'new': changed, 
             'user_id': session.get('user_id')
         })
+    
     return jsonify({'ok': True, 'member': m.to_dict(), 'changed': changed})
 
 
