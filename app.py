@@ -2335,6 +2335,17 @@ def api_fees_mark_paid():
     db.session.add(tx)
     p.status = 'Paid'
     db.session.commit()
+    
+    # Log this payment
+    append_audit('payment.mark-paid', {
+        'member_id': member_id,
+        'year': year,
+        'month': month,
+        'amount': amount,
+        'method': method,
+        'transaction_id': tx.id,
+        'user_id': user_id
+    })
 
     currency = get_setting('currency_code') or 'PKR'
     return jsonify({
@@ -2851,6 +2862,48 @@ def export_all_members():
         out_path = os.path.join(BASE_DIR, 'all_members_export.xlsx')
         df.to_excel(out_path, index=False)
         return send_file(out_path, as_attachment=True, download_name=f'all_members_{datetime.now().strftime("%Y%m%d")}.xlsx')
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+# Audit Trail API
+@app.route('/api/audit/logs', methods=['GET'])
+@login_required
+def get_audit_logs():
+    try:
+        limit = int(request.args.get('limit', 100))
+        offset = int(request.args.get('offset', 0))
+        action_filter = request.args.get('action', '').strip()
+        
+        query = AuditLog.query.order_by(AuditLog.created_at.desc())
+        
+        if action_filter:
+            query = query.filter(AuditLog.action.contains(action_filter))
+        
+        total = query.count()
+        logs = query.limit(limit).offset(offset).all()
+        
+        rows = []
+        for log in logs:
+            try:
+                data = json.loads(log.data_json) if log.data_json else {}
+            except Exception:
+                data = {}
+            
+            rows.append({
+                'id': log.id,
+                'timestamp': log.created_at.isoformat(),
+                'action': log.action,
+                'data': data,
+                'hash': log.hash[:16] if log.hash else '',  # Show first 16 chars of hash
+            })
+        
+        return jsonify({
+            'ok': True,
+            'logs': rows,
+            'total': total,
+            'limit': limit,
+            'offset': offset
+        })
     except Exception as e:
         return jsonify({'ok': False, 'error': str(e)}), 500
 

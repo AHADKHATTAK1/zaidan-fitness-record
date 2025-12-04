@@ -157,6 +157,15 @@
           >
             <i class="bi bi-file-earmark-excel me-1"></i>Export All Members
           </button>
+          <button
+            id="btnAuditTrail"
+            class="btn btn-outline-info btn-sm"
+            data-bs-toggle="modal"
+            data-bs-target="#auditTrailModal"
+            title="View system activity log"
+          >
+            <i class="bi bi-clock-history me-1"></i>Audit Trail
+          </button>
         </div>
         <div class="col-md-3">
           <a class="text-decoration-none" href="/members">
@@ -1094,6 +1103,59 @@
           <div class="modal-footer">
             <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Cancel</button>
             <button type="button" class="btn btn-danger" id="confirmSystemResetBtn">Reset System</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Audit Trail Modal -->
+    <div class="modal fade" id="auditTrailModal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-xl modal-dialog-scrollable">
+        <div class="modal-content bg-dark text-light border border-info">
+          <div class="modal-header bg-info text-dark">
+            <h5 class="modal-title"><i class="bi bi-clock-history me-2"></i>Audit Trail / Activity Log</h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <div class="row g-2 mb-3">
+              <div class="col-md-6">
+                <label class="form-label">Filter by Action</label>
+                <input type="text" id="auditActionFilter" class="form-control form-control-sm" placeholder="e.g., member.update, payment.mark-paid" />
+              </div>
+              <div class="col-md-2">
+                <label class="form-label">&nbsp;</label>
+                <button class="btn btn-sm btn-primary w-100" onclick="loadAuditLogs()">Filter</button>
+              </div>
+            </div>
+
+            <div id="auditLogsStatus" class="alert alert-info">
+              <i class="bi bi-hourglass-split"></i> Loading audit logs...
+            </div>
+
+            <div class="table-responsive d-none" id="auditTableContainer">
+              <table class="table table-dark table-hover table-sm">
+                <thead>
+                  <tr>
+                    <th>Timestamp</th>
+                    <th>Action</th>
+                    <th>Details</th>
+                  </tr>
+                </thead>
+                <tbody id="auditLogsTable"></tbody>
+              </table>
+            </div>
+
+            <div id="auditPaginationContainer" class="d-flex justify-content-between align-items-center mt-3 d-none">
+              <small id="auditPaginationInfo" class="text-muted"></small>
+              <div>
+                <button class="btn btn-sm btn-outline-light" onclick="loadAuditLogs(0, true)">First</button>
+                <button class="btn btn-sm btn-outline-light" onclick="loadAuditLogs(-20)">Previous</button>
+                <button class="btn btn-sm btn-outline-light" onclick="loadAuditLogs(20)">Next</button>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Close</button>
           </div>
         </div>
       </div>
@@ -2969,6 +3031,87 @@
           btn.innerHTML = originalHtml;
         }
       }
+
+      // Audit Trail Functions
+      let auditCurrentOffset = 0;
+      let auditTotalCount = 0;
+      const auditPageSize = 50;
+
+      async function loadAuditLogs(offsetDelta = 0, reset = false) {
+        if (reset) {
+          auditCurrentOffset = 0;
+        } else if (offsetDelta) {
+          auditCurrentOffset = Math.max(0, auditCurrentOffset + offsetDelta);
+        }
+
+        const actionFilter = document.getElementById('auditActionFilter').value.trim();
+        const statusDiv = document.getElementById('auditLogsStatus');
+        const tableContainer = document.getElementById('auditTableContainer');
+        const tableBody = document.getElementById('auditLogsTable');
+
+        statusDiv.classList.remove('d-none');
+        tableContainer.classList.add('d-none');
+
+        try {
+          const params = new URLSearchParams({
+            limit: auditPageSize,
+            offset: auditCurrentOffset
+          });
+          if (actionFilter) {
+            params.append('action', actionFilter);
+          }
+
+          const response = await fetch(`/api/audit/logs?${params}`);
+          const result = await response.json();
+
+          if (!result.ok) {
+            statusDiv.innerHTML = `<div class="alert alert-danger"><i class="bi bi-exclamation-circle"></i> Error loading logs: ${result.error || 'Unknown error'}</div>`;
+            return;
+          }
+
+          auditTotalCount = result.total;
+          const logs = result.logs || [];
+
+          if (logs.length === 0) {
+            statusDiv.innerHTML = `<div class="alert alert-info"><i class="bi bi-info-circle"></i> No audit logs found</div>`;
+            return;
+          }
+
+          // Build table rows
+          tableBody.innerHTML = logs.map(log => `
+            <tr>
+              <td><small>${new Date(log.timestamp).toLocaleString()}</small></td>
+              <td><code>${log.action}</code></td>
+              <td>
+                <small class="text-muted">
+                  ${Object.entries(log.data)
+                    .map(([k, v]) => `${k}: ${JSON.stringify(v).substring(0, 30)}`)
+                    .join(' | ')}
+                </small>
+              </td>
+            </tr>
+          `).join('');
+
+          statusDiv.classList.add('d-none');
+          tableContainer.classList.remove('d-none');
+
+          // Update pagination
+          const paginationContainer = document.getElementById('auditPaginationContainer');
+          const paginationInfo = document.getElementById('auditPaginationInfo');
+          paginationInfo.textContent = `Showing ${auditCurrentOffset + 1}-${Math.min(auditCurrentOffset + auditPageSize, auditTotalCount)} of ${auditTotalCount} logs`;
+          paginationContainer.classList.remove('d-none');
+        } catch (e) {
+          statusDiv.innerHTML = `<div class="alert alert-danger"><i class="bi bi-exclamation-circle"></i> Error: ${e.message}</div>`;
+          console.error(e);
+        }
+      }
+
+      // Load audit logs when modal opens
+      document.addEventListener('show.bs.modal', function (event) {
+        if (event.target.id === 'auditTrailModal') {
+          loadAuditLogs(0, true);
+        }
+      });
     </script>
     <script>
       // Register Service Worker for Offline Support
