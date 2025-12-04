@@ -967,6 +967,9 @@
             </div>
           </div>
           <div class="modal-footer">
+            <button type="button" class="btn btn-info" onclick="openBulkPaymentModal()" title="Mark multiple months as paid">
+              <i class="bi bi-cash-coin"></i> Bulk Mark Paid
+            </button>
             <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Close</button>
           </div>
         </div>
@@ -1014,6 +1017,44 @@
             <button type="button" class="btn btn-primary" onclick="refreshBackupList()">
               <i class="bi bi-arrow-clockwise"></i> Refresh
             </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bulk Payment Modal -->
+    <div class="modal fade" id="bulkPaymentModal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-lg">
+        <div class="modal-content bg-dark text-light border border-success">
+          <div class="modal-header">
+            <h5 class="modal-title"><i class="bi bi-cash-coin"></i> Bulk Mark Payment</h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <p class="text-muted mb-3">Mark multiple months as paid for the current member.</p>
+            
+            <div class="mb-3">
+              <label class="form-label">Select Months to Mark Paid</label>
+              <div id="bulkPaymentMonths" class="d-flex flex-wrap gap-2"></div>
+            </div>
+            
+            <div class="mb-3">
+              <label class="form-label">Payment Amount (optional)</label>
+              <input type="number" id="bulkPaymentAmount" class="form-control" placeholder="Leave blank to use monthly fee" />
+            </div>
+            
+            <div class="mb-3">
+              <label class="form-label">Payment Date</label>
+              <input type="date" id="bulkPaymentDate" class="form-control" />
+            </div>
+            
+            <div class="alert alert-info small">
+              <i class="bi bi-info-circle"></i> This will mark all selected unpaid months as Paid with the same date and amount.
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button type="button" class="btn btn-success" onclick="executeBulkPayment()">Mark as Paid</button>
           </div>
         </div>
       </div>
@@ -2755,6 +2796,104 @@
           showMemberDetail(matches[0].id);
           showToast(`Found ${matches.length} matches. Showing first member.`, 'info');
           document.getElementById('memberSearchInput').value = '';
+        }
+      }
+
+      // Bulk Payment Functions
+      let bulkPaymentModal = null;
+      
+      function openBulkPaymentModal() {
+        if (!window.currentMemberId || !window.currentMemberData) {
+          showToast('No member selected', 'danger');
+          return;
+        }
+
+        const payments = window.currentMemberPayments || [];
+        const unpaidMonths = payments.filter(p => p.status === 'Unpaid');
+
+        if (unpaidMonths.length === 0) {
+          showToast('No unpaid months for this member', 'info');
+          return;
+        }
+
+        // Populate month selection
+        const monthsContainer = document.getElementById('bulkPaymentMonths');
+        monthsContainer.innerHTML = unpaidMonths.map(p => `
+          <label class="form-check">
+            <input class="form-check-input bulk-month-checkbox" type="checkbox" data-month="${p.month}" data-year="${p.year}" value="${p.month}_${p.year}" />
+            <span class="form-check-label">${p.month_name} ${p.year}</span>
+          </label>
+        `).join('');
+
+        // Set default date to today
+        document.getElementById('bulkPaymentDate').valueAsDate = new Date();
+
+        if (!bulkPaymentModal) {
+          bulkPaymentModal = new bootstrap.Modal(document.getElementById('bulkPaymentModal'));
+        }
+        bulkPaymentModal.show();
+      }
+
+      async function executeBulkPayment() {
+        const memberId = window.currentMemberId;
+        const selectedCheckboxes = document.querySelectorAll('.bulk-month-checkbox:checked');
+
+        if (selectedCheckboxes.length === 0) {
+          showToast('Select at least one month', 'warning');
+          return;
+        }
+
+        const amount = document.getElementById('bulkPaymentAmount').value;
+        const paidDate = document.getElementById('bulkPaymentDate').value;
+
+        if (!paidDate) {
+          showToast('Select payment date', 'warning');
+          return;
+        }
+
+        const btn = event.target;
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Marking...';
+
+        const payments = Array.from(selectedCheckboxes).map(cb => {
+          const [month, year] = cb.value.split('_');
+          return { month: parseInt(month), year: parseInt(year), amount: amount ? parseFloat(amount) : null, paid_date: paidDate };
+        });
+
+        try {
+          // Mark each month as paid
+          let successCount = 0;
+          for (const payment of payments) {
+            const res = await fetch('/api/payment/mark-paid', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                member_id: memberId,
+                month: payment.month,
+                year: payment.year,
+                amount: payment.amount,
+                paid_date: payment.paid_date
+              })
+            });
+
+            if (res.ok) successCount++;
+          }
+
+          if (successCount > 0) {
+            showToast(`${successCount} month(s) marked as paid!`, 'success');
+            
+            // Close modal and refresh
+            bulkPaymentModal.hide();
+            await showMemberDetail(memberId);
+          } else {
+            showToast('Failed to mark payments', 'danger');
+          }
+        } catch (e) {
+          showToast('Error marking payments', 'danger');
+          console.error(e);
+        } finally {
+          btn.disabled = false;
+          btn.innerHTML = '<i class="bi bi-cash-coin"></i> Mark as Paid';
         }
       }
     </script>
