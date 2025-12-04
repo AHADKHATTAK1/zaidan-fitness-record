@@ -2648,6 +2648,23 @@ def list_members():
     members = query.order_by(Member.id.desc()).all()
     return jsonify([m.to_dict() for m in members])
 
+@app.route('/api/members/<int:member_id>', methods=['GET'])
+@login_required
+def get_member_detail(member_id):
+    m = Member.query.get_or_404(member_id)
+    member_dict = m.to_dict()
+    
+    # Add payment status info
+    now = datetime.now()
+    current_payment = Payment.query.filter_by(member_id=member_id, year=now.year, month=now.month).first()
+    member_dict['current_fee_status'] = current_payment.status if current_payment else 'N/A'
+    
+    # Add last transaction amount
+    last_txn = PaymentTransaction.query.filter_by(member_id=member_id).order_by(PaymentTransaction.created_at.desc()).first()
+    member_dict['last_tx_amount'] = last_txn.amount if last_txn else None
+    
+    return jsonify(member_dict)
+
 # Duplicate removed: get_member (kept first definition above)
 
 
