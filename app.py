@@ -2487,27 +2487,63 @@ def update_member(member_id):
     m = Member.query.get_or_404(member_id)
     data = request.json or {}
     changed = {}
+    
+    # Personal Information
     name = (data.get('name') or '').strip()
     if name:
         m.name = name; changed['name'] = name
     phone = (data.get('phone') or '').strip()
     if phone:
         m.phone = phone; changed['phone'] = phone
+    email = (data.get('email') or '').strip()
+    if email or email == '':
+        m.email = email or None; changed['email'] = m.email
+    cnic = (data.get('cnic') or '').strip()
+    if cnic or cnic == '':
+        m.cnic = cnic or None; changed['cnic'] = m.cnic
+    address = (data.get('address') or '').strip()
+    if address or address == '':
+        m.address = address or None; changed['address'] = m.address
+    gender = (data.get('gender') or '').strip()
+    if gender:
+        m.gender = gender; changed['gender'] = gender
+    dob = (data.get('date_of_birth') or '').strip()
+    if dob:
+        try:
+            m.date_of_birth = datetime.fromisoformat(dob).date(); changed['date_of_birth'] = m.date_of_birth.isoformat()
+        except Exception:
+            pass
+    
+    # Membership Details
     admission = (data.get('admission_date') or '').strip()
     if admission:
         try:
             m.admission_date = datetime.fromisoformat(admission).date(); changed['admission_date'] = m.admission_date.isoformat()
         except Exception:
             pass
+    if 'monthly_price' in data:
+        try:
+            val = data.get('monthly_price')
+            if val not in (None, ''):
+                m.monthly_price = float(val); changed['monthly_price'] = m.monthly_price
+        except Exception:
+            pass
+    referred_by = (data.get('referred_by') or '').strip()
+    if referred_by or referred_by == '':
+        m.referred_by = referred_by or None; changed['referred_by'] = m.referred_by
+    if 'is_active' in data:
+        m.is_active = bool(data.get('is_active')); changed['is_active'] = m.is_active
+    notes = (data.get('notes') or '').strip()
+    if notes or notes == '':
+        m.notes = notes or None; changed['notes'] = m.notes
+    
+    # Legacy fields support
     plan_type = (data.get('plan_type') or '').lower().strip()
     if plan_type in ('monthly','yearly'):
         m.plan_type = plan_type; changed['plan_type'] = plan_type
     access_tier = (data.get('access_tier') or '').lower().strip()
     if access_tier in ('standard','unlimited'):
         m.access_tier = access_tier; changed['access_tier'] = access_tier
-    email = (data.get('email') or '').strip()
-    if email:
-        m.email = email; changed['email'] = email
     training_type = (data.get('training_type') or '').lower().strip()
     if training_type in ('standard','personal','cardio','other'):
         if training_type == 'other':
@@ -2524,6 +2560,7 @@ def update_member(member_id):
             pass
     if 'special_tag' in data:
         m.special_tag = bool(data.get('special_tag')); changed['special_tag'] = bool(data.get('special_tag'))
+    
     if changed:
         db.session.commit()
         append_audit('member.update', {'member_id': m.id, **changed, 'user_id': session.get('user_id')})
