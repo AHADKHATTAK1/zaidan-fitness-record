@@ -2924,6 +2924,106 @@ def get_audit_logs():
     except Exception as e:
         return jsonify({'ok': False, 'error': str(e)}), 500
 
+# Referral Statistics API
+@app.route('/api/referral/stats', methods=['GET'])
+@login_required
+def get_referral_stats():
+    try:
+        # Get all members with referral info
+        members = Member.query.all()
+        
+        # Group by referrer
+        referral_map = {}
+        total_referred = 0
+        
+        for member in members:
+            if member.referred_by and member.referred_by.strip():
+                referrer = member.referred_by.strip()
+                if referrer not in referral_map:
+                    referral_map[referrer] = {
+                        'total': 0,
+                        'active': 0,
+                        'total_fees': 0.0
+                    }
+                referral_map[referrer]['total'] += 1
+                if member.is_active:
+                    referral_map[referrer]['active'] += 1
+                # Calculate total fees from this referred member
+                paid_months = Payment.query.filter_by(member_id=member.id, status='Paid').count()
+                referral_map[referrer]['total_fees'] += paid_months * (member.monthly_price or 0)
+                total_referred += 1
+        
+        # Build response
+        rows = []
+        for referrer, stats in sorted(referral_map.items(), key=lambda x: x[1]['total'], reverse=True):
+            rows.append({
+                'referrer': referrer,
+                'total_referred': stats['total'],
+                'active_members': stats['active'],
+                'total_fees_collected': round(stats['total_fees'], 2)
+            })
+        
+        # Find top referrer
+        top_referrer = None
+        top_count = 0
+        if rows:
+            top_referrer = rows[0]['referrer']
+            top_count = rows[0]['total_referred']
+        
+        return jsonify({
+            'ok': True,
+            'total_referrers': len(referral_map),
+            'total_referred': total_referred,
+            'top_referrer': top_referrer,
+            'top_referrer_count': top_count,
+            'referrals': rows
+        })
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+# Attendance Recording API
+@app.route('/api/attendance/record', methods=['POST'])
+@login_required
+def record_attendance():
+    try:
+        data = request.get_json() or {}
+        member_id = int(data.get('member_id') or 0)
+        attendance_type = (data.get('type') or '').strip()
+        
+        if not member_id or attendance_type not in ('check-in', 'check-out'):
+            return jsonify({'ok': False, 'error': 'member_id and type (check-in/check-out) required'}), 400
+        
+        member = Member.query.get_or_404(member_id)
+        
+        # Record attendance
+        check_in_time = None
+        if attendance_type == 'check-in':
+            check_in_time = datetime.utcnow()
+        
+        attendance = Attendance(
+            member_id=member_id,
+            check_in=check_in_time or datetime.utcnow(),
+            check_out=None if attendance_type == 'check-in' else datetime.utcnow()
+        )
+        db.session.add(attendance)
+        db.session.commit()
+        
+        # Log attendance
+        append_audit('attendance.record', {
+            'member_id': member_id,
+            'type': attendance_type,
+            'timestamp': datetime.utcnow().isoformat(),
+            'user_id': session.get('user_id')
+        })
+        
+        return jsonify({
+            'ok': True,
+            'message': f'{attendance_type} recorded',
+            'timestamp': datetime.utcnow().isoformat()
+        })
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
 def ensure_payment_rows(member: Member, year: int):
     # Create payment rows for a year if missing
     existing = {(p.month) for p in Payment.query.filter_by(member_id=member.id, year=year).all()}

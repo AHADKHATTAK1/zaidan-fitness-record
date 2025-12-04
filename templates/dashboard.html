@@ -166,6 +166,15 @@
           >
             <i class="bi bi-clock-history me-1"></i>Audit Trail
           </button>
+          <button
+            id="btnReferralStats"
+            class="btn btn-outline-warning btn-sm"
+            data-bs-toggle="modal"
+            data-bs-target="#referralStatsModal"
+            title="View referral performance and statistics"
+          >
+            <i class="bi bi-share-fill me-1"></i>Referral Stats
+          </button>
         </div>
         <div class="col-md-3">
           <a class="text-decoration-none" href="/members">
@@ -970,9 +979,38 @@
               </div>
             </div>
 
+            <!-- Quick Attendance Section -->
+            <div class="card bg-dark border-info mb-3">
+              <div class="card-header bg-info text-dark">
+                <h6 class="mb-0"><i class="bi bi-calendar-check"></i> Attendance</h6>
+              </div>
+              <div class="card-body">
+                <div class="d-flex gap-2">
+                  <button type="button" class="btn btn-success flex-grow-1" onclick="recordAttendance('check-in')" title="Mark member as checked in">
+                    <i class="bi bi-arrow-right-square"></i> Check In
+                  </button>
+                  <button type="button" class="btn btn-danger flex-grow-1" onclick="recordAttendance('check-out')" title="Mark member as checked out">
+                    <i class="bi bi-arrow-left-square"></i> Check Out
+                  </button>
+                </div>
+                <div id="attendanceStatus" class="small text-muted mt-2 text-center">Last attendance: -</div>
+              </div>
+            </div>
+
             <div class="card bg-dark border-primary">
-              <div class="card-header bg-primary text-white">
+              <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
                 <h6 class="mb-0"><i class="bi bi-clock-history"></i> Payment Timeline</h6>
+                <div class="d-flex gap-2 align-items-center">
+                  <select id="paymentStatusFilter" class="form-select form-select-sm" style="width: auto;" onchange="filterPaymentTimeline()">
+                    <option value="">All Statuses</option>
+                    <option value="Paid">Paid Only</option>
+                    <option value="Unpaid">Unpaid Only</option>
+                  </select>
+                  <select id="paymentSortOrder" class="form-select form-select-sm" style="width: auto;" onchange="filterPaymentTimeline()">
+                    <option value="desc">Newest First</option>
+                    <option value="asc">Oldest First</option>
+                  </select>
+                </div>
               </div>
               <div class="card-body">
                 <!-- Summary header for payments -->
@@ -1160,6 +1198,79 @@
         </div>
       </div>
     </div>
+
+    <!-- Referral Statistics Modal -->
+    <div class="modal fade" id="referralStatsModal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content bg-dark text-light border border-warning">
+          <div class="modal-header bg-warning text-dark">
+            <h5 class="modal-title"><i class="bi bi-share-fill me-2"></i>Referral Statistics</h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <div id="referralStatsStatus" class="alert alert-info">
+              <i class="bi bi-hourglass-split"></i> Loading referral data...
+            </div>
+
+            <div id="referralStatsContainer" class="d-none">
+              <div class="row g-3 mb-4">
+                <div class="col-md-3">
+                  <div class="card bg-dark border-success">
+                    <div class="card-body text-center">
+                      <small class="text-muted">Total Referrers</small>
+                      <h5 id="totalReferrers" class="text-success mb-0">0</h5>
+                    </div>
+                  </div>
+                </div>
+                <div class="col-md-3">
+                  <div class="card bg-dark border-info">
+                    <div class="card-body text-center">
+                      <small class="text-muted">Total Referred</small>
+                      <h5 id="totalReferred" class="text-info mb-0">0</h5>
+                    </div>
+                  </div>
+                </div>
+                <div class="col-md-3">
+                  <div class="card bg-dark border-primary">
+                    <div class="card-body text-center">
+                      <small class="text-muted">Top Referrer</small>
+                      <h5 id="topReferrer" class="text-primary mb-0">-</h5>
+                    </div>
+                  </div>
+                </div>
+                <div class="col-md-3">
+                  <div class="card bg-dark border-warning">
+                    <div class="card-body text-center">
+                      <small class="text-muted">Top Count</small>
+                      <h5 id="topReferrerCount" class="text-warning mb-0">0</h5>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <h6 class="mb-3">Referral Breakdown</h6>
+              <div class="table-responsive">
+                <table class="table table-dark table-hover table-sm">
+                  <thead>
+                    <tr>
+                      <th>Referrer Name</th>
+                      <th class="text-center">Members Referred</th>
+                      <th class="text-center">Active Members</th>
+                      <th class="text-center">Total Fees Collected</th>
+                    </tr>
+                  </thead>
+                  <tbody id="referralTable"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Close</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Toast notification container -->
     <div id="toastArea" class="toast-container position-fixed bottom-0 end-0 p-3"></div>
     <script>
@@ -2677,6 +2788,88 @@
         }
       }
 
+      // Filter payment timeline by status and sort order
+      function filterPaymentTimeline() {
+        const statusFilter = document.getElementById('paymentStatusFilter').value || '';
+        const sortOrder = document.getElementById('paymentSortOrder').value || 'desc';
+        const timelineDiv = document.getElementById('memberTimeline');
+        const items = Array.from(timelineDiv.querySelectorAll('.list-group-item'));
+
+        // Filter by status
+        let filtered = items;
+        if (statusFilter) {
+          filtered = items.filter(item => {
+            const badgeText = item.querySelector('.badge')?.textContent?.trim();
+            return badgeText === statusFilter;
+          });
+        }
+
+        // Sort
+        filtered.sort((a, b) => {
+          const textA = a.textContent;
+          const textB = b.textContent;
+          return sortOrder === 'desc' ? textB.localeCompare(textA) : textA.localeCompare(textB);
+        });
+
+        // Reorder items
+        filtered.forEach((item, idx) => {
+          timelineDiv.appendChild(item);
+        });
+
+        // Show/hide items
+        items.forEach(item => {
+          const shouldShow = statusFilter === '' || item.querySelector('.badge')?.textContent?.trim() === statusFilter;
+          item.style.display = shouldShow ? '' : 'none';
+        });
+
+        // Show message if no results
+        if (filtered.length === 0 && statusFilter) {
+          const emptyMsg = document.createElement('div');
+          emptyMsg.className = 'text-center text-muted py-3';
+          emptyMsg.innerHTML = `<i class="bi bi-inbox"></i> No ${statusFilter.toLowerCase()} payments found`;
+          timelineDiv.appendChild(emptyMsg);
+        }
+      }
+
+      // Quick Attendance Recording
+      async function recordAttendance(type) {
+        if (!window.currentMemberId) {
+          showToast('No member selected', 'danger');
+          return;
+        }
+
+        const memberId = window.currentMemberId;
+        const btn = event.target.closest('button');
+        btn.disabled = true;
+        const originalHtml = btn.innerHTML;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>' + (type === 'check-in' ? 'Checking in...' : 'Checking out...');
+
+        try {
+          const response = await fetch('/api/attendance/record', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ member_id: memberId, type: type })
+          });
+
+          const result = await response.json();
+          if (result.ok) {
+            showToast(`${type === 'check-in' ? 'Checked in' : 'Checked out'} successfully`, 'success');
+            // Update attendance status
+            const statusDiv = document.getElementById('attendanceStatus');
+            const now = new Date();
+            statusDiv.innerHTML = `<strong>${type === 'check-in' ? '✓ Checked In' : '✗ Checked Out'}</strong> at ${now.toLocaleTimeString()}`;
+          } else {
+            showToast('Error recording attendance', 'danger');
+          }
+        } catch (e) {
+          showToast('Error: ' + e.message, 'danger');
+          console.error(e);
+        } finally {
+          btn.disabled = false;
+          btn.innerHTML = originalHtml;
+        }
+      }
+
       // Edit mode functions
       function toggleEditMode() {
         // Switch to edit mode
@@ -3110,8 +3303,56 @@
       document.addEventListener('show.bs.modal', function (event) {
         if (event.target.id === 'auditTrailModal') {
           loadAuditLogs(0, true);
+        } else if (event.target.id === 'referralStatsModal') {
+          loadReferralStats();
         }
       });
+
+      // Referral Statistics Functions
+      async function loadReferralStats() {
+        const statusDiv = document.getElementById('referralStatsStatus');
+        const container = document.getElementById('referralStatsContainer');
+
+        statusDiv.classList.remove('d-none');
+        container.classList.add('d-none');
+
+        try {
+          const response = await fetch('/api/referral/stats');
+          const result = await response.json();
+
+          if (!result.ok) {
+            statusDiv.innerHTML = `<div class="alert alert-danger"><i class="bi bi-exclamation-circle"></i> Error: ${result.error || 'Unknown error'}</div>`;
+            return;
+          }
+
+          // Update summary cards
+          document.getElementById('totalReferrers').textContent = result.total_referrers || 0;
+          document.getElementById('totalReferred').textContent = result.total_referred || 0;
+          document.getElementById('topReferrer').textContent = result.top_referrer || '-';
+          document.getElementById('topReferrerCount').textContent = result.top_referrer_count || 0;
+
+          // Build referral table
+          const tableBody = document.getElementById('referralTable');
+          if (!result.referrals || result.referrals.length === 0) {
+            tableBody.innerHTML = '<tr><td colspan="4" class="text-center text-muted py-3">No referral data available</td></tr>';
+          } else {
+            tableBody.innerHTML = result.referrals.map(r => `
+              <tr>
+                <td><strong>${r.referrer}</strong></td>
+                <td class="text-center">${r.total_referred}</td>
+                <td class="text-center"><span class="badge bg-success">${r.active_members}</span></td>
+                <td class="text-center text-warning">${new Intl.NumberFormat('en-US', {minimumFractionDigits: 2, maximumFractionDigits: 2}).format(r.total_fees_collected)}</td>
+              </tr>
+            `).join('');
+          }
+
+          statusDiv.classList.add('d-none');
+          container.classList.remove('d-none');
+        } catch (e) {
+          statusDiv.innerHTML = `<div class="alert alert-danger"><i class="bi bi-exclamation-circle"></i> Error: ${e.message}</div>`;
+          console.error(e);
+        }
+      }
     </script>
     <script>
       // Register Service Worker for Offline Support
