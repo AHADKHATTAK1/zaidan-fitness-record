@@ -2374,11 +2374,23 @@
                     } else {
                       admissionStatusDiv.innerHTML = '';
                     }
+                    // Get current month to check against selected month
+                    var now = new Date();
+                    var currentMonth = now.getMonth() + 1;
+                    var currentYear = now.getFullYear();
+                    
                     for (var i = 0; i < data.payments.length; i++) {
                       var p = data.payments[i];
+                      var statusLabel = p.status; // Fallback to original
+                      
+                      // If status is "N/A", display "Paid" instead
+                      if (p.status === 'N/A') {
+                        statusLabel = 'Paid';
+                      }
+                      
                       var badgeClass = 'bg-secondary';
                       var textClass = 'text-light';
-                      if (p.status === 'Paid') { badgeClass = 'bg-success'; textClass = 'text-white'; }
+                      if (p.status === 'Paid' || p.status === 'N/A') { badgeClass = 'bg-success'; textClass = 'text-white'; }
                       else if (p.status === 'Unpaid') { badgeClass = 'bg-danger'; textClass = 'text-white'; }
                       
                       // Compute summary and next-due before rendering rows (first loop)
@@ -2387,7 +2399,7 @@
                         var nextDue = null;
                         for (var j = 0; j < data.payments.length; j++) {
                           var pp = data.payments[j];
-                          if (pp.status === 'Paid') paidCount++; else if (pp.status === 'Unpaid') unpaidCount++;
+                          if (pp.status === 'Paid' || pp.status === 'N/A') paidCount++; else if (pp.status === 'Unpaid') unpaidCount++;
                           if (!nextDue && pp.status === 'Unpaid') nextDue = new Date(pp.year, pp.month - 1, 1);
                         }
                         var nextDueStr = nextDue ? nextDue.toLocaleString(undefined, { month: 'short', year: 'numeric' }) : '-';
@@ -2412,6 +2424,10 @@
                       if (admissionMonth && p.month === admissionMonth.month && p.year === admissionMonth.year) {
                         isAdmission = true;
                       }
+                      
+                      // Check if this payment month is the current month (do not mark as paid)
+                      var isCurrentMonth = (p.month === currentMonth && p.year === currentYear);
+                      
                       html += '<div class="list-group-item list-group-item-action '+ (isAdmission ? 'border-info border-3' : 'border-secondary') +' '+ (isAdmission ? 'bg-dark' : 'bg-dark') +' py-3">';
                       html += '<div class="d-flex w-100 justify-content-between align-items-center">';
                       html += '<h6 class="mb-1">';
@@ -2427,14 +2443,29 @@
                         }
                         if (firstUnpaidIdx === i) addNextDueChip = true;
                       }
-                      html += '<span class="badge ' + badgeClass + ' ' + textClass + ' fs-5 px-4 py-2">' + p.status + '</span>';
+                      
+                      // Display badge with checkmark for paid months (not N/A, not current month)
+                      var badgeContent = statusLabel;
+                      if ((p.status === 'Paid' || p.status === 'N/A') && !isCurrentMonth && p.status !== 'N/A') {
+                        badgeContent = '<i class="bi bi-check-circle-fill me-2"></i>' + statusLabel;
+                      } else if (p.status === 'N/A') {
+                        badgeContent = statusLabel;
+                      }
+                      
+                      html += '<span class="badge ' + badgeClass + ' ' + textClass + ' fs-5 px-4 py-2">' + badgeContent + '</span>';
                       if (isAdmission) {
                         html += '<span class="badge bg-info text-dark ms-2">Admission month</span>';
                       }
                       if (addNextDueChip) {
                         html += '<span class="badge bg-warning text-dark ms-2">Next Due</span>';
                       }
-                      html += '<button class="btn btn-sm ms-3 ' + (p.status === 'Paid' ? 'btn-outline-danger' : 'btn-outline-success') + '" onclick="markFeePaid(' + memberId + ',' + p.month + ',' + p.year + ',' + (p.status === 'Paid' ? '\'Unpaid\'' : '\'Paid\'') + ')">' + (p.status === 'Paid' ? 'Mark Unpaid' : 'Mark Paid') + '</button>';
+                      
+                      // Only show Mark Paid/Unpaid button if NOT current month
+                      if (!isCurrentMonth) {
+                        html += '<button class="btn btn-sm ms-3 ' + (p.status === 'Paid' ? 'btn-outline-danger' : 'btn-outline-success') + '" onclick="markFeePaid(' + memberId + ',' + p.month + ',' + p.year + ',' + (p.status === 'Paid' ? '\'Unpaid\'' : '\'Paid\'') + ')">' + (p.status === 'Paid' ? 'Mark Unpaid' : 'Mark Paid') + '</button>';
+                      } else {
+                        html += '<button class="btn btn-sm ms-3 btn-outline-secondary" disabled title="Cannot modify current month">Current Month</button>';
+                      }
                       html += '</div>';
                       // Only show amount and date if payment has been processed (amount exists)
                       if (p.amount) {
