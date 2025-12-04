@@ -2501,92 +2501,124 @@ def update_member(member_id):
     old_values = {}
     
     # Personal Information
-    name = (data.get('name') or '').strip()
-    if name:
+    if 'name' in data:
+        name = (data.get('name') or '').strip()
         old_values['name'] = m.name
-        m.name = name; changed['name'] = name
-    phone = (data.get('phone') or '').strip()
-    if phone:
+        m.name = name or None; changed['name'] = m.name
+    
+    if 'phone' in data:
+        phone = (data.get('phone') or '').strip()
         old_values['phone'] = m.phone
-        m.phone = phone; changed['phone'] = phone
-    email = (data.get('email') or '').strip()
-    if email or email == '':
+        m.phone = phone or None; changed['phone'] = m.phone
+    
+    if 'email' in data:
+        email = (data.get('email') or '').strip()
         old_values['email'] = m.email
         m.email = email or None; changed['email'] = m.email
-    cnic = (data.get('cnic') or '').strip()
-    if cnic or cnic == '':
+    
+    if 'cnic' in data:
+        cnic = (data.get('cnic') or '').strip()
         old_values['cnic'] = m.cnic
         m.cnic = cnic or None; changed['cnic'] = m.cnic
-    address = (data.get('address') or '').strip()
-    if address or address == '':
+    
+    if 'address' in data:
+        address = (data.get('address') or '').strip()
         old_values['address'] = m.address
         m.address = address or None; changed['address'] = m.address
-    gender = (data.get('gender') or '').strip()
-    if gender:
+    
+    if 'gender' in data:
+        gender = (data.get('gender') or '').strip()
         old_values['gender'] = m.gender
-        m.gender = gender; changed['gender'] = gender
-    dob = (data.get('date_of_birth') or '').strip()
-    if dob:
-        try:
+        m.gender = gender or None; changed['gender'] = m.gender
+    
+    if 'date_of_birth' in data:
+        dob = (data.get('date_of_birth') or '').strip()
+        if dob:
+            try:
+                old_values['date_of_birth'] = m.date_of_birth.isoformat() if m.date_of_birth else None
+                m.date_of_birth = datetime.fromisoformat(dob).date(); changed['date_of_birth'] = m.date_of_birth.isoformat()
+            except Exception:
+                pass
+        else:
             old_values['date_of_birth'] = m.date_of_birth.isoformat() if m.date_of_birth else None
-            m.date_of_birth = datetime.fromisoformat(dob).date(); changed['date_of_birth'] = m.date_of_birth.isoformat()
-        except Exception:
-            pass
+            m.date_of_birth = None; changed['date_of_birth'] = None
     
     # Membership Details
-    admission = (data.get('admission_date') or '').strip()
-    if admission:
-        try:
+    if 'admission_date' in data:
+        admission = (data.get('admission_date') or '').strip()
+        if admission:
+            try:
+                old_values['admission_date'] = m.admission_date.isoformat() if m.admission_date else None
+                m.admission_date = datetime.fromisoformat(admission).date(); changed['admission_date'] = m.admission_date.isoformat()
+            except Exception:
+                pass
+        else:
             old_values['admission_date'] = m.admission_date.isoformat() if m.admission_date else None
-            m.admission_date = datetime.fromisoformat(admission).date(); changed['admission_date'] = m.admission_date.isoformat()
-        except Exception:
-            pass
+            m.admission_date = None; changed['admission_date'] = None
+    
     if 'monthly_price' in data:
         try:
             val = data.get('monthly_price')
             if val not in (None, ''):
                 old_values['monthly_price'] = m.monthly_price
                 m.monthly_price = float(val); changed['monthly_price'] = m.monthly_price
+            elif val in (None, ''):
+                old_values['monthly_price'] = m.monthly_price
+                m.monthly_price = None; changed['monthly_price'] = None
         except Exception:
             pass
-    referred_by = (data.get('referred_by') or '').strip()
-    if referred_by or referred_by == '':
+    
+    if 'referred_by' in data:
+        referred_by = (data.get('referred_by') or '').strip()
         old_values['referred_by'] = m.referred_by
         m.referred_by = referred_by or None; changed['referred_by'] = m.referred_by
+    
     if 'is_active' in data:
         old_values['is_active'] = m.is_active
         m.is_active = bool(data.get('is_active')); changed['is_active'] = m.is_active
-    notes = (data.get('notes') or '').strip()
-    if notes or notes == '':
+    
+    if 'notes' in data:
+        notes = (data.get('notes') or '').strip()
         old_values['notes'] = m.notes
         m.notes = notes or None; changed['notes'] = m.notes
     
     # Legacy fields support
-    plan_type = (data.get('plan_type') or '').lower().strip()
-    if plan_type in ('monthly','yearly'):
-        old_values['plan_type'] = m.plan_type
-        m.plan_type = plan_type; changed['plan_type'] = plan_type
-    access_tier = (data.get('access_tier') or '').lower().strip()
-    if access_tier in ('standard','unlimited'):
-        old_values['access_tier'] = m.access_tier
-        m.access_tier = access_tier; changed['access_tier'] = access_tier
-    training_type = (data.get('training_type') or '').lower().strip()
-    if training_type in ('standard','personal','cardio','other'):
-        if training_type == 'other':
-            training_type = 'standard'
-        old_values['training_type'] = m.training_type
-        m.training_type = training_type; changed['training_type'] = training_type
+    if 'plan_type' in data:
+        plan_type = (data.get('plan_type') or '').lower().strip()
+        if plan_type in ('monthly','yearly'):
+            old_values['plan_type'] = m.plan_type
+            m.plan_type = plan_type; changed['plan_type'] = plan_type
+    
+    if 'access_tier' in data:
+        access_tier = (data.get('access_tier') or '').lower().strip()
+        if access_tier in ('standard','unlimited'):
+            old_values['access_tier'] = m.access_tier
+            m.access_tier = access_tier; changed['access_tier'] = access_tier
+    
+    if 'training_type' in data:
+        training_type = (data.get('training_type') or '').lower().strip()
+        if training_type in ('standard','personal','cardio','other'):
+            if training_type == 'other':
+                training_type = 'standard'
+            old_values['training_type'] = m.training_type
+            m.training_type = training_type; changed['training_type'] = training_type
+    
     if 'custom_training' in data:
         old_values['custom_training'] = m.custom_training
         m.custom_training = (data.get('custom_training') or '').strip() or None; changed['custom_training'] = m.custom_training
+    
     if 'monthly_fee' in data:
         try:
             val = data.get('monthly_fee')
             if val not in (None, ''):
                 old_values['monthly_fee'] = m.monthly_fee
                 m.monthly_fee = float(val); changed['monthly_fee'] = m.monthly_fee
+            elif val in (None, ''):
+                old_values['monthly_fee'] = m.monthly_fee
+                m.monthly_fee = None; changed['monthly_fee'] = None
         except Exception:
             pass
+    
     if 'special_tag' in data:
         old_values['special_tag'] = m.special_tag
         m.special_tag = bool(data.get('special_tag')); changed['special_tag'] = bool(data.get('special_tag'))

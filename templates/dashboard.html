@@ -2924,20 +2924,23 @@
         }
 
         // Collect updated data
+        const monthlyFeeVal = document.getElementById('editMonthlyFee').value;
         const updatedData = {
-          name: document.getElementById('editName').value,
-          phone: document.getElementById('editPhone').value,
-          email: document.getElementById('editEmail').value,
-          cnic: document.getElementById('editCNIC').value,
-          address: document.getElementById('editAddress').value,
-          gender: document.getElementById('editGender').value,
-          date_of_birth: document.getElementById('editDOB').value,
-          admission_date: document.getElementById('editAdmission').value,
-          monthly_price: parseFloat(document.getElementById('editMonthlyFee').value) || 0,
-          referred_by: document.getElementById('editReferred').value,
+          name: document.getElementById('editName').value || '',
+          phone: document.getElementById('editPhone').value || '',
+          email: document.getElementById('editEmail').value || '',
+          cnic: document.getElementById('editCNIC').value || '',
+          address: document.getElementById('editAddress').value || '',
+          gender: document.getElementById('editGender').value || '',
+          date_of_birth: document.getElementById('editDOB').value || '',
+          admission_date: document.getElementById('editAdmission').value || '',
+          monthly_price: monthlyFeeVal ? parseFloat(monthlyFeeVal) : '',
+          referred_by: document.getElementById('editReferred').value || '',
           is_active: document.getElementById('editStatus').value === '1',
-          notes: document.getElementById('editNotes').value
+          notes: document.getElementById('editNotes').value || ''
         };
+
+        console.log('Saving member:', memberId, updatedData);
 
         try {
           const res = await fetch(`/api/members/${memberId}`, {
@@ -2946,7 +2949,10 @@
             body: JSON.stringify(updatedData)
           });
 
+          console.log('Response status:', res.status, res.ok);
           const data = await res.json();
+          console.log('Response data:', data);
+          
           if (data.ok || res.ok) {
             showToast('Member details updated successfully!', 'success');
             // Reload member detail to reflect changes
@@ -2957,8 +2963,8 @@
             showToast('Failed to update: ' + (data.error || 'Unknown error'), 'danger');
           }
         } catch (e) {
-          showToast('Error updating member details', 'danger');
-          console.error(e);
+          showToast('Error updating member details: ' + e.message, 'danger');
+          console.error('Update error:', e);
         }
       }
 
