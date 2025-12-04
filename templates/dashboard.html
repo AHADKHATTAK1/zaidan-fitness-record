@@ -910,7 +910,15 @@
                 <h6 class="mb-0"><i class="bi bi-calendar-check"></i> Membership Details</h6>
               </div>
               <div class="card-body">
-                <div id="admissionMonthPaidStatus" class="mb-3"></div>
+                <div id="admissionMonthPaidStatus" class="mb-3 p-3 bg-dark border rounded d-flex justify-content-between align-items-center">
+                  <div>
+                    <small class="text-muted">Admission Month Status:</small>
+                    <div id="admissionStatusBadge" class="mt-1"></div>
+                  </div>
+                  <button type="button" class="btn btn-sm btn-success" id="btnMarkAdmissionPaid" onclick="markAdmissionMonthPaid()" title="Mark admission month as paid">
+                    <i class="bi bi-check-circle"></i> Mark Paid
+                  </button>
+                </div>
                 <div class="row g-3">
                   <div class="col-md-3">
                     <small class="text-muted">Admission Date</small>
@@ -2635,21 +2643,26 @@
                         }
                       }
                     }
-                    var admissionStatusDiv = document.getElementById('admissionMonthPaidStatus');
+                    
+                    // Update admission status display
                     if (admissionMonth) {
-                      var badgeClass = admissionPaid ? 'bg-success' : 'bg-danger';
-                      var badgeText = admissionPaid ? 'Paid' : 'Unpaid';
-                      var remainderTag = '';
-                      if (!admissionPaid) {
-                        remainderTag = '<span class="badge bg-warning text-dark ms-2">Remainder Fee</span>';
+                      var badgeClass = admissionPaid ? 'text-bg-success' : 'text-bg-danger';
+                      var badgeText = admissionPaid ? '✓ Paid' : '✗ Unpaid';
+                      var badgeHtml = '<span class="badge ' + badgeClass + ' fs-6">' + admissionMonth.month_name + ' ' + admissionMonth.year + ' - ' + badgeText + '</span>';
+                      document.getElementById('admissionStatusBadge').innerHTML = badgeHtml;
+                      
+                      // Enable/disable Mark Paid button
+                      var markBtn = document.getElementById('btnMarkAdmissionPaid');
+                      if (admissionPaid) {
+                        markBtn.disabled = true;
+                        markBtn.classList.add('opacity-50');
+                      } else {
+                        markBtn.disabled = false;
+                        markBtn.classList.remove('opacity-50');
                       }
-                      var btn = '';
-                      if (!admissionPaid) {
-                        btn = '<button class="btn btn-sm btn-outline-success ms-3" onclick="markFeePaid(' + memberId + ',' + admissionMonth.month + ',' + admissionMonth.year + ',' + '\'Paid\'' + ')">Mark Paid</button>';
-                      }
-                      admissionStatusDiv.innerHTML = '<span class="badge ' + badgeClass + ' fs-5 px-4 py-2">Admission Month: ' + admissionMonth.month_name + ' ' + admissionMonth.year + ' - ' + badgeText + '</span>' + remainderTag + btn;
                     } else {
-                      admissionStatusDiv.innerHTML = '';
+                      document.getElementById('admissionStatusBadge').innerHTML = '<span class="badge bg-secondary">No admission month found</span>';
+                      document.getElementById('btnMarkAdmissionPaid').disabled = true;
                     }
                     // Get current month to check against selected month
                     var now = new Date();
@@ -2860,6 +2873,57 @@
             statusDiv.innerHTML = `<strong>${type === 'check-in' ? '✓ Checked In' : '✗ Checked Out'}</strong> at ${now.toLocaleTimeString()}`;
           } else {
             showToast('Error recording attendance', 'danger');
+          }
+        } catch (e) {
+          showToast('Error: ' + e.message, 'danger');
+          console.error(e);
+        } finally {
+          btn.disabled = false;
+          btn.innerHTML = originalHtml;
+        }
+      }
+
+      // Mark admission month as paid
+      async function markAdmissionMonthPaid() {
+        if (!window.currentMemberId || !window.currentMemberData) {
+          showToast('No member selected', 'danger');
+          return;
+        }
+
+        const memberId = window.currentMemberId;
+        const memberData = window.currentMemberData;
+        const admissionDate = new Date(memberData.admission_date);
+        const admissionMonth = admissionDate.getMonth() + 1;
+        const admissionYear = admissionDate.getFullYear();
+
+        const btn = document.getElementById('btnMarkAdmissionPaid');
+        btn.disabled = true;
+        const originalHtml = btn.innerHTML;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Marking...';
+
+        try {
+          // Get today's date for payment recording
+          const today = new Date().toISOString().split('T')[0];
+          
+          const response = await fetch('/api/fees/mark-paid', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              member_id: memberId,
+              month: admissionMonth,
+              year: admissionYear,
+              paid_date: today,
+              method: 'payment'
+            })
+          });
+
+          const result = await response.json();
+          if (result.ok) {
+            showToast('Admission month marked as paid!', 'success');
+            // Refresh member details
+            await showMemberDetail(memberId);
+          } else {
+            showToast('Failed to mark as paid: ' + (result.error || 'Unknown error'), 'danger');
           }
         } catch (e) {
           showToast('Error: ' + e.message, 'danger');
