@@ -700,17 +700,24 @@
         const m = js.member || {};
         const pays = Array.isArray(js.payments) ? js.payments : [];
         // Build payments table
-        let payHtml = '<div class="table-responsive"><table class="table table-sm table-striped"><thead><tr>'+
+        let payHtml = '<div class="table-responsive"><table class="table table-sm table-striped align-middle"><thead><tr>'+
           '<th>Year</th><th>Month</th><th>Status</th><th>Amount</th><th>Paid Date</th></tr></thead><tbody>';
-        payHtml += pays.map(p => `
-          <tr>
-            <td>${p.year}</td>
-            <td>${p.month_name || p.month}</td>
-            <td>${p.status}</td>
-            <td>${p.amount ?? ''}</td>
-            <td>${p.paid_date ?? ''}</td>
-          </tr>
-        `).join('');
+        payHtml += pays.map(p => {
+          const monthLabel = p.month_name || p.month;
+          const status = (p.status || '').toLowerCase();
+          const statusClass = status === 'paid' ? 'bg-success' : status === 'unpaid' ? 'bg-danger' : 'bg-secondary';
+          const amountLabel = (p.amount !== undefined && p.amount !== null) ? `PKR ${p.amount}` : '—';
+          const paidDate = p.paid_date || '';
+          return `
+            <tr>
+              <td>${p.year}</td>
+              <td>${monthLabel}</td>
+              <td><span class="badge ${statusClass}">${p.status || ''}</span></td>
+              <td>${amountLabel}</td>
+              <td>${paidDate}</td>
+            </tr>
+          `;
+        }).join('');
         payHtml += '</tbody></table></div>';
         const payTab = document.getElementById('tab-payments');
         if (payTab) payTab.innerHTML = `
@@ -724,7 +731,11 @@
           const txList = await txRes.json();
           let txHtml = '<div class="table-responsive"><table class="table table-sm"><thead><tr><th>Date</th><th>Month</th><th>Amount</th><th>Method</th></tr></thead><tbody>';
           if (Array.isArray(txList) && txList.length > 0) {
-            txHtml += txList.map(t => `<tr><td>${t.created_at || ''}</td><td>${t.month || ''}</td><td>${t.amount || ''}</td><td>${t.method || ''}</td></tr>`).join('');
+            txHtml += txList.map(t => {
+              const monthLabel = t.month_name || t.month || '';
+              const amountLabel = (t.amount !== undefined && t.amount !== null) ? `PKR ${t.amount}` : '—';
+              return `<tr><td>${t.created_at || ''}</td><td>${monthLabel}</td><td>${amountLabel}</td><td>${t.method || ''}</td></tr>`;
+            }).join('');
           } else {
             txHtml += '<tr><td colspan="4" class="text-muted">No transactions</td></tr>';
           }
