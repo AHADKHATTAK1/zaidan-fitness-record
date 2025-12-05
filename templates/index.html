@@ -523,10 +523,22 @@
               </div>
             </div>
             <div class="modal-footer">
+              <button type="button" class="btn btn-primary" id="btnDownloadCard" onclick="downloadMemberCard()">
+                <i class="bi bi-printer"></i> Download PDF Card
+              </button>
               <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
                 Close
               </button>
             </div>
+              // Download PDF member card
+              function downloadMemberCard() {
+                const memberId = window.currentMemberId || window.currentEditMemberId;
+                if (!memberId) {
+                  if (typeof showToast === 'function') showToast('No member selected', 'warning');
+                  return;
+                }
+                window.open(`/api/member/${memberId}/card`, '_blank');
+              }
           </div>
         </div>
       </div>

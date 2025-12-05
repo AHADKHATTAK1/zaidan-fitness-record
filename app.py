@@ -1,3 +1,61 @@
+# PDF card generation imports
+from reportlab.lib.pagesizes import IDCARD, landscape
+from reportlab.pdfgen import canvas
+from reportlab.lib.units import mm
+from reportlab.lib.utils import ImageReader
+import qrcode
+import io
+# API: Generate PDF member card
+@app.route('/api/member/<int:member_id>/card', methods=['GET'])
+@login_required
+def generate_member_card(member_id):
+    m = Member.query.get_or_404(member_id)
+    buf = io.BytesIO()
+    # Card size: 86mm x 54mm (standard ID card)
+    width, height = 86*mm, 54*mm
+    c = canvas.Canvas(buf, pagesize=(width, height))
+    # Background
+    c.setFillColorRGB(0.95, 0.98, 1)
+    c.rect(0, 0, width, height, fill=1, stroke=0)
+    # Gym logo (top left)
+    try:
+        c.drawImage('static/uploads/logo.png', 5*mm, height-20*mm, width=18*mm, height=18*mm, mask='auto')
+    except Exception:
+        pass
+    # Member photo (top right)
+    photo_path = f'static/uploads/member_{member_id}.jpg'
+    try:
+        c.drawImage(photo_path, width-23*mm, height-23*mm, width=18*mm, height=18*mm, mask='auto')
+    except Exception:
+        pass
+    # Name
+    c.setFont('Helvetica-Bold', 12)
+    c.setFillColorRGB(0.1, 0.2, 0.4)
+    c.drawString(5*mm, height-25*mm, m.name or '')
+    # Admission date
+    c.setFont('Helvetica', 8)
+    c.setFillColorRGB(0.2, 0.2, 0.2)
+    c.drawString(5*mm, height-30*mm, f"Admission: {m.admission_date.strftime('%Y-%m-%d') if m.admission_date else ''}")
+    # Plan/type
+    c.drawString(5*mm, height-35*mm, f"Plan: {m.plan_type or ''}")
+    # Expiry (1 year from admission)
+    if m.admission_date:
+        expiry = m.admission_date.replace(year=m.admission_date.year+1)
+        c.drawString(5*mm, height-40*mm, f"Expiry: {expiry.strftime('%Y-%m-%d')}")
+    # QR code (member ID)
+    qr = qrcode.make(str(m.id))
+    qr_buf = io.BytesIO()
+    qr.save(qr_buf, format='PNG')
+    qr_buf.seek(0)
+    c.drawImage(ImageReader(qr_buf), width-23*mm, 5*mm, width=18*mm, height=18*mm, mask='auto')
+    # Card border
+    c.setStrokeColorRGB(0.1, 0.2, 0.4)
+    c.setLineWidth(1)
+    c.rect(1, 1, width-2, height-2, fill=0)
+    c.showPage()
+    c.save()
+    buf.seek(0)
+    return send_file(buf, mimetype='application/pdf', as_attachment=True, download_name=f"member_{member_id}_card.pdf")
 from flask import Flask, request, jsonify, render_template, send_file, session, redirect, url_for, flash
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
