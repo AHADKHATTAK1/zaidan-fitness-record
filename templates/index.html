@@ -474,6 +474,7 @@
       <!-- Member Details Modal -->
       <div class="modal fade" id="memberDetailsModal" tabindex="-1">
         <div class="modal-dialog modal-lg modal-dialog-scrollable">
+          <div class="modal-content">
             <div class="modal-header">
               <h5 class="modal-title">Member Details</h5>
               <button
@@ -496,7 +497,6 @@
                     aria-selected="true"
                   >
                     Payments
-                  </button>
                   </button>
                 </li>
                 <li class="nav-item" role="presentation">
@@ -530,15 +530,6 @@
                 Close
               </button>
             </div>
-              // Download PDF member card
-              function downloadMemberCard() {
-                const memberId = window.currentMemberId || window.currentEditMemberId;
-                if (!memberId) {
-                  if (typeof showToast === 'function') showToast('No member selected', 'warning');
-                  return;
-                }
-                window.open(`/api/member/${memberId}/card`, '_blank');
-              }
           </div>
         </div>
       </div>
@@ -706,6 +697,7 @@
 
     async function openMemberDetails(memberId) {
       try {
+        window.currentMemberId = memberId;
         const res = await fetch(`/api/member/${memberId}/payment-history`);
         if (!res.ok) throw new Error('Failed to load member details');
         const js = await res.json();
@@ -761,6 +753,15 @@
         console.error(e);
         if (typeof showToast === 'function') showToast('Failed to load member details');
       }
+    }
+
+    function downloadMemberCard() {
+      const memberId = window.currentMemberId || window.currentEditMemberId;
+      if (!memberId) {
+        if (typeof showToast === 'function') showToast('No member selected', 'warning');
+        return;
+      }
+      window.open(`/api/member/${memberId}/card`, '_blank');
     }
 
     async function openEditMember(memberId) {
