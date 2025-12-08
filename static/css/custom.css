@@ -11,3 +11,13 @@
 
 /* Toast notifications */
 .toast-container { z-index: 9999; }
+
+/* Dashboard modal controls */
+.member-search-input {
+	width: 200px;
+}
+
+.timeline-filter-select {
+	width: auto;
+	min-width: 140px;
+}

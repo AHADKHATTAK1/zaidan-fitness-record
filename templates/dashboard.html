@@ -835,7 +835,7 @@
               <button type="button" class="btn btn-sm btn-outline-secondary" id="btnPrevMember" onclick="navigateMember(-1)" title="Previous member">
                 <i class="bi bi-chevron-left"></i>
               </button>
-              <input type="text" id="memberSearchInput" class="form-control form-control-sm" placeholder="Search members..." style="width: 200px;" onkeyup="filterMemberSearch(event)" />
+              <input type="text" id="memberSearchInput" class="form-control form-control-sm member-search-input" placeholder="Search members..." onkeyup="filterMemberSearch(event)" />
               <button type="button" class="btn btn-sm btn-outline-secondary" id="btnNextMember" onclick="navigateMember(1)" title="Next member">
                 <i class="bi bi-chevron-right"></i>
               </button>
@@ -996,12 +996,12 @@
               <div class="card-header bg-primary text-white d-flex justify-content-between align-items-center">
                 <h6 class="mb-0"><i class="bi bi-clock-history"></i> Payment Timeline</h6>
                 <div class="d-flex gap-2 align-items-center">
-                  <select id="paymentStatusFilter" class="form-select form-select-sm" style="width: auto;" onchange="filterPaymentTimeline()">
+                  <select id="paymentStatusFilter" class="form-select form-select-sm timeline-filter-select" onchange="filterPaymentTimeline()">
                     <option value="">All Statuses</option>
                     <option value="Paid">Paid Only</option>
                     <option value="Unpaid">Unpaid Only</option>
                   </select>
-                  <select id="paymentSortOrder" class="form-select form-select-sm" style="width: auto;" onchange="filterPaymentTimeline()">
+                  <select id="paymentSortOrder" class="form-select form-select-sm timeline-filter-select" onchange="filterPaymentTimeline()">
                     <option value="desc">Newest First</option>
                     <option value="asc">Oldest First</option>
                   </select>
