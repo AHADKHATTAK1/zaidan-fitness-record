@@ -1,67 +1,14 @@
-# PDF card generation imports
-from reportlab.lib.pagesizes import IDCARD, landscape
-from reportlab.pdfgen import canvas
-from reportlab.lib.units import mm
-from reportlab.lib.utils import ImageReader
-import qrcode
-import io
-# API: Generate PDF member card
-@app.route('/api/member/<int:member_id>/card', methods=['GET'])
-@login_required
-def generate_member_card(member_id):
-    m = Member.query.get_or_404(member_id)
-    buf = io.BytesIO()
-    # Card size: 86mm x 54mm (standard ID card)
-    width, height = 86*mm, 54*mm
-    c = canvas.Canvas(buf, pagesize=(width, height))
-    # Background
-    c.setFillColorRGB(0.95, 0.98, 1)
-    c.rect(0, 0, width, height, fill=1, stroke=0)
-    # Gym logo (top left)
-    try:
-        c.drawImage('static/uploads/logo.png', 5*mm, height-20*mm, width=18*mm, height=18*mm, mask='auto')
-    except Exception:
-        pass
-    # Member photo (top right)
-    photo_path = f'static/uploads/member_{member_id}.jpg'
-    try:
-        c.drawImage(photo_path, width-23*mm, height-23*mm, width=18*mm, height=18*mm, mask='auto')
-    except Exception:
-        pass
-    # Name
-    c.setFont('Helvetica-Bold', 12)
-    c.setFillColorRGB(0.1, 0.2, 0.4)
-    c.drawString(5*mm, height-25*mm, m.name or '')
-    # Admission date
-    c.setFont('Helvetica', 8)
-    c.setFillColorRGB(0.2, 0.2, 0.2)
-    c.drawString(5*mm, height-30*mm, f"Admission: {m.admission_date.strftime('%Y-%m-%d') if m.admission_date else ''}")
-    # Plan/type
-    c.drawString(5*mm, height-35*mm, f"Plan: {m.plan_type or ''}")
-    # Expiry (1 year from admission)
-    if m.admission_date:
-        expiry = m.admission_date.replace(year=m.admission_date.year+1)
-        c.drawString(5*mm, height-40*mm, f"Expiry: {expiry.strftime('%Y-%m-%d')}")
-    # QR code (member ID)
-    qr = qrcode.make(str(m.id))
-    qr_buf = io.BytesIO()
-    qr.save(qr_buf, format='PNG')
-    qr_buf.seek(0)
-    c.drawImage(ImageReader(qr_buf), width-23*mm, 5*mm, width=18*mm, height=18*mm, mask='auto')
-    # Card border
-    c.setStrokeColorRGB(0.1, 0.2, 0.4)
-    c.setLineWidth(1)
-    c.rect(1, 1, width-2, height-2, fill=0)
-    c.showPage()
-    c.save()
-    buf.seek(0)
-    return send_file(buf, mimetype='application/pdf', as_attachment=True, download_name=f"member_{member_id}_card.pdf")
 from flask import Flask, request, jsonify, render_template, send_file, session, redirect, url_for, flash
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from datetime import datetime, timezone
 import pandas as pd
 import os
+from dotenv import load_dotenv
+
+# Load environment variables FIRST (before any os.getenv calls)
+load_dotenv(os.path.join(os.path.dirname(os.path.abspath(__file__)), '.env'))
+
 import requests
 from werkzeug.security import generate_password_hash, check_password_hash
 import werkzeug
@@ -77,7 +24,6 @@ import json
 import hashlib
 import secrets
 from sqlalchemy import or_, func
-from dotenv import load_dotenv
 import smtplib
 from email.message import EmailMessage
 import zipfile
@@ -135,19 +81,14 @@ Migrate(app, db)
 # Static uploads (member photos)
 UPLOAD_FOLDER = os.path.join(BASE_DIR, 'static', 'uploads')
 ALLOWED_IMAGE_EXTS = {'.jpg', '.jpeg', '.png', '.webp'}
-ALLOWED_DATA_EXTS = {'.csv', '.xlsx', '.xls'}
-MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB for images
-MAX_DATA_FILE_SIZE = 50 * 1024 * 1024  # 50MB for data files
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 # Local backups directory
 BACKUP_DIR = os.path.join(BASE_DIR, 'backups')
 os.makedirs(BACKUP_DIR, exist_ok=True)
 
-# Load environment variables and configure secret key
-load_dotenv(os.path.join(BASE_DIR, '.env'))
+# Configure secret key (dotenv already loaded at top)
 app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev-secret-change-me')
-app.config['MAX_CONTENT_LENGTH'] = MAX_DATA_FILE_SIZE  # Limit request size
 # Cookie security settings
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
@@ -165,21 +106,6 @@ oauth.register(
     client_kwargs={'scope': 'openid email profile'}
 )
 
-
-def _normalize_phone(phone: str) -> str:
-    """Normalize phone number to E.164 format (basic, assumes country code if missing)."""
-    import re
-    phone = re.sub(r'\D', '', phone or '')
-    if not phone:
-        return ''
-    # If phone starts with '0', replace with default country code (from settings or '92')
-    default_cc = get_setting('whatsapp_default_country_code') or '92'
-    if phone.startswith('0'):
-        phone = default_cc + phone[1:]
-    elif not phone.startswith(default_cc):
-        # If not starting with country code, prepend it
-        phone = default_cc + phone
-    return phone
 
 def get_gym_name() -> str:
     try:
@@ -319,11 +245,11 @@ def _save_member_image(member_id: int, storage) -> tuple[bool, str]:
 
 class Member(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(120), nullable=False, index=True)
-    phone = db.Column(db.String(50), index=True)
+    name = db.Column(db.String(120), nullable=False)
+    phone = db.Column(db.String(50))
     admission_date = db.Column(db.Date, nullable=False)
     plan_type = db.Column(db.String(20), default='monthly')
-    referral_code = db.Column(db.String(32), unique=True, index=True)
+    referral_code = db.Column(db.String(32), unique=True)
     referred_by = db.Column(db.Integer, db.ForeignKey('member.id'), nullable=True)
     access_tier = db.Column(db.String(20), default='standard')  # standard/unlimited
     email = db.Column(db.String(255), nullable=True)
@@ -331,26 +257,32 @@ class Member(db.Model):
     special_tag = db.Column(db.Boolean, default=False)
     custom_training = db.Column(db.String(50), nullable=True)
     monthly_fee = db.Column(db.Float, nullable=True)
-    monthly_price = db.Column(db.Float, nullable=True)  # Per-member monthly price (if different from global setting)
     last_contact_at = db.Column(db.DateTime, nullable=True)
     is_active = db.Column(db.Boolean, default=True)  # Member active/inactive status
-    # Additional member details
-    cnic = db.Column(db.String(50), nullable=True)
-    address = db.Column(db.Text, nullable=True)
-    gender = db.Column(db.String(20), nullable=True)
-    date_of_birth = db.Column(db.Date, nullable=True)
-    notes = db.Column(db.Text, nullable=True)
-
-    # Relationships for efficient access to payments and transactions
-    payments = db.relationship('Payment', backref='member', lazy='dynamic')
-    transactions = db.relationship('PaymentTransaction', backref='member', lazy='dynamic')
 
     def to_dict(self):
-        # Keep to_dict focused on member attributes only (no per-request queries)
-        # Payment status/amount will be joined in API endpoints when needed.
-        last_amt = None
-        last_time = None
-        monthly_price = self.monthly_price
+        # Compute current month fee status and last recorded amount
+        now = datetime.now()
+        try:
+            p = Payment.query.filter_by(member_id=self.id, year=now.year, month=now.month).first()
+            status = p.status if p else 'Unpaid'
+        except Exception:
+            status = 'Unpaid'
+        try:
+            tx = PaymentTransaction.query.filter_by(
+                member_id=self.id,
+                year=now.year,
+                month=now.month
+            ).order_by(PaymentTransaction.created_at.desc()).first()
+            last_amt = float(tx.amount) if tx and tx.amount is not None else None
+            last_time = tx.created_at.isoformat() if tx and tx.created_at else None
+        except Exception:
+            last_amt = None
+            last_time = None
+        try:
+            monthly_price = float(get_setting('monthly_price') or '0')
+        except Exception:
+            monthly_price = 0.0
         display_training = None
         if self.custom_training and self.custom_training.strip():
             display_training = self.custom_training.strip()
@@ -375,52 +307,34 @@ class Member(db.Model):
             "email": self.email or '',
             "training_type": self.training_type or 'standard',
             "special_tag": bool(self.special_tag),
-            # Filled by API joins when requested
-            "current_fee_status": None,
-            "current_fee_amount": None,
-            "last_tx_time": None,
-            "last_tx_amount": None,
+            "current_fee_status": status,
+            "current_fee_amount": last_amt,
+            "last_tx_time": last_time,
+            "last_tx_amount": last_amt,
             "monthly_price": monthly_price,
             "custom_training": self.custom_training or '',
             "monthly_fee": self.monthly_fee,
             "display_training_type": display_training,
             "last_contact_at": self.last_contact_at.isoformat() if self.last_contact_at else None,
             "is_active": bool(self.is_active) if hasattr(self, 'is_active') else True,
-            "cnic": self.cnic,
-            "address": self.address,
-            "gender": self.gender,
-            "date_of_birth": self.date_of_birth.isoformat() if self.date_of_birth else None,
-            "notes": self.notes,
         }
 
 class Payment(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    member_id = db.Column(db.Integer, db.ForeignKey('member.id'), nullable=False, index=True)
-    year = db.Column(db.Integer, nullable=False, index=True)
-    month = db.Column(db.Integer, nullable=False, index=True)  # 1-12
-    status = db.Column(db.String(20), nullable=False, index=True)  # Paid/Unpaid/N/A
-    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
-    
-    __table_args__ = (
-        db.Index('idx_payment_year_month_status', 'year', 'month', 'status'),
-    )
-    
-    def to_dict(self):
-        return {
-            'id': self.id,
-            'member_id': self.member_id,
-            'year': self.year,
-            'month': self.month,
-            'status': self.status,
-            'created_at': self.created_at.isoformat() if self.created_at else None
-        }
+    member_id = db.Column(db.Integer, db.ForeignKey('member.id'), nullable=False)
+    year = db.Column(db.Integer, nullable=False)
+    month = db.Column(db.Integer, nullable=False)  # 1-12
+    status = db.Column(db.String(20), nullable=False)  # Paid/Unpaid/N/A
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-# Duplicate removed: to_dict
+    def to_dict(self):
+        return {"id": self.id, "member_id": self.member_id, "year": self.year, "month": self.month, "status": self.status}
+
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
     password_hash = db.Column(db.String(255), nullable=False)
-    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
     role = db.Column(db.String(20), default='staff')  # admin or staff
 
 class OAuthAccount(db.Model):
@@ -428,24 +342,18 @@ class OAuthAccount(db.Model):
     provider = db.Column(db.String(50), nullable=False)
     provider_id = db.Column(db.String(255), unique=True, nullable=False)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 class PaymentTransaction(db.Model):
-    __tablename__ = 'payment_transaction'
-    __table_args__ = (
-        db.Index('idx_payment_tx_member_year_month', 'member_id', 'year', 'month'),
-        db.Index('idx_payment_tx_created_at', 'created_at'),
-    )
-    
     id = db.Column(db.Integer, primary_key=True)
-    member_id = db.Column(db.Integer, db.ForeignKey('member.id'), nullable=False, index=True)
+    member_id = db.Column(db.Integer, db.ForeignKey('member.id'), nullable=False)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
     plan_type = db.Column(db.String(20), nullable=False)
-    year = db.Column(db.Integer, nullable=False, index=True)
+    year = db.Column(db.Integer, nullable=False)
     month = db.Column(db.Integer, nullable=True)
     amount = db.Column(db.Float, nullable=True)
     method = db.Column(db.String(50), nullable=True)
-    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 class Setting(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -454,7 +362,7 @@ class Setting(db.Model):
 
 class AuditLog(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
     action = db.Column(db.String(100), nullable=False)
     data_json = db.Column(db.Text, nullable=False)
     prev_hash = db.Column(db.String(64), nullable=True)
@@ -467,7 +375,7 @@ class UploadedFile(db.Model):
     content_hash = db.Column(db.String(64), nullable=False, unique=True)
     rows_count = db.Column(db.Integer, nullable=False, default=0)
     rows_json = db.Column(db.Text, nullable=True)  # JSON snapshot of rows (truncated)
-    uploaded_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    uploaded_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 
 class Product(db.Model):
@@ -478,36 +386,23 @@ class Product(db.Model):
     category = db.Column(db.String(80), nullable=True)
     sku = db.Column(db.String(60), unique=True, nullable=True)
     is_active = db.Column(db.Boolean, nullable=False, default=True)
-    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
-
-class Attendance(db.Model):
-    """Track member check-ins/check-outs"""
-    id = db.Column(db.Integer, primary_key=True)
-    member_id = db.Column(db.Integer, db.ForeignKey('member.id'), nullable=False)
-    check_in = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(timezone.utc))
-    check_out = db.Column(db.DateTime, nullable=True)
-    date = db.Column(db.Date, nullable=False)
-    notes = db.Column(db.String(255), nullable=True)
-    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     def to_dict(self):
         return {
-            "id": self.id,
-            "member_id": self.member_id,
-            "check_in": self.check_in.isoformat() if self.check_in else None,
-            "check_out": self.check_out.isoformat() if self.check_out else None,
-            "date": self.date.isoformat(),
-            "notes": self.notes,
-            "duration_minutes": self.get_duration_minutes()
+            'id': self.id,
+            'name': self.name,
+            'price': float(self.price or 0.0),
+            'stock': self.stock,
+            'category': self.category or '',
+            'sku': self.sku or '',
+            'is_active': bool(self.is_active),
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
         }
-    
-    def get_duration_minutes(self):
-        if self.check_out and self.check_in:
-            return int((self.check_out - self.check_in).total_seconds() / 60)
-        return None
 
-# Duplicate removed: to_dict
+
 class Sale(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     invoice_number = db.Column(db.String(32), unique=True, nullable=False)
@@ -526,7 +421,28 @@ class Sale(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     items = db.relationship('SaleItem', backref='sale', cascade='all, delete-orphan')
 
-# Duplicate removed: to_dict
+    def to_dict(self, include_items: bool = False):
+        data = {
+            'id': self.id,
+            'invoice_number': self.invoice_number,
+            'customer_name': self.customer_name or '',
+            'subtotal': float(self.subtotal or 0.0),
+            'tax': float(self.tax or 0.0),
+            'discount': float(self.discount or 0.0),
+            'total': float(self.total or 0.0),
+            'payment_method': self.payment_method or '',
+            'note': self.note or '',
+            'channel': self.channel,
+            'status': self.status,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'synced_from_offline': bool(self.synced_from_offline),
+            'verification_hash': self.verification_hash,
+        }
+        if include_items:
+            data['items'] = [item.to_dict() for item in self.items]
+        return data
+
+
 class SaleItem(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     sale_id = db.Column(db.Integer, db.ForeignKey('sale.id'), nullable=False)
@@ -536,7 +452,18 @@ class SaleItem(db.Model):
     unit_price = db.Column(db.Float, nullable=False, default=0.0)
     total_price = db.Column(db.Float, nullable=False, default=0.0)
 
-# Duplicate removed: to_dict
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'sale_id': self.sale_id,
+            'product_id': self.product_id,
+            'name': self.name,
+            'quantity': self.quantity,
+            'unit_price': float(self.unit_price or 0.0),
+            'total_price': float(self.total_price or 0.0),
+        }
+
+
 class LoginLog(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, nullable=True)
@@ -559,15 +486,7 @@ def set_setting(key: str, value: str) -> None:
     db.session.commit()
 
 def _sql_column_exists(table: str, column: str) -> bool:
-    """Check if a column exists in a table. Table name is validated against whitelist."""
-    # Whitelist of valid table names to prevent SQL injection
-    valid_tables = {'member', 'user', 'payment', 'payment_transaction', 'setting', 
-                    'uploaded_file', 'attendance', 'oauth_account', 'login_log', 
-                    'audit_log', 'sale', 'sale_item', 'inventory'}
-    if table not in valid_tables:
-        return False
     try:
-        # Safe to use table name now since it's whitelisted
         res = db.session.execute(db.text(f"PRAGMA table_info('{table}')")).mappings().all()
         for row in res:
             if row.get('name') == column:
@@ -649,17 +568,6 @@ def _log_login_event(user: "User", method: str) -> None:
         db.session.rollback()
 
 
-# Error handlers
-@app.errorhandler(413)
-def request_entity_too_large(error):
-    """Handle file upload size limit exceeded"""
-    size_mb = MAX_DATA_FILE_SIZE / (1024 * 1024)
-    return jsonify({
-        'ok': False,
-        'error': f'File too large. Maximum upload size is {size_mb}MB'
-    }), 413
-
-
 def _sale_to_csv_bytes(sale: Sale) -> bytes:
     rows = ["invoice_number,customer,total,payment_method,created_at"]
     rows.append(
@@ -672,28 +580,6 @@ def _sale_to_csv_bytes(sale: Sale) -> bytes:
         )
     return "\n".join(rows).encode('utf-8')
 
-
-def _upload_backup_to_gdrive(data: bytes, filename: str, mime: str = 'application/octet-stream') -> tuple[bool, str]:
-    """Uploads a file to Google Drive backup folder if enabled and configured."""
-    if not HAVE_GDRIVE:
-        return False, 'Google API client not installed'
-    folder_id = os.getenv('GDRIVE_BACKUP_FOLDER_ID')
-    sa_file = os.getenv('GOOGLE_SERVICE_ACCOUNT_FILE')
-    if not (folder_id and sa_file and os.path.exists(sa_file)):
-        return False, 'Google Drive backup configuration missing'
-    try:
-        scopes = ['https://www.googleapis.com/auth/drive.file']
-        creds = service_account.Credentials.from_service_account_file(sa_file, scopes=scopes)
-        service = build('drive', 'v3', credentials=creds)
-        media = MediaIoBaseUpload(BytesIO(data), mimetype=mime, resumable=False)
-        file_metadata = {
-            'name': filename,
-            'parents': [folder_id],
-        }
-        file = service.files().create(body=file_metadata, media_body=media, fields='id').execute()
-        return True, f"Uploaded to Drive with file id {file.get('id')}"
-    except Exception as exc:
-        return False, str(exc)
 
 def _append_sale_to_sheet(sale: Sale) -> tuple[bool, str | dict]:
     if not HAVE_GDRIVE:
@@ -725,6 +611,7 @@ def _append_sale_to_sheet(sale: Sale) -> tuple[bool, str | dict]:
         return True, 'appended'
     except Exception as exc:
         return False, str(exc)
+
 
 def _upload_sale_artifacts_to_drive(sale: Sale) -> dict:
     results = {}
@@ -934,18 +821,7 @@ def send_monthly_unpaid_template_job():
             if os.getenv('WHATSAPP_TEMPLATE_FEE_REMINDER_NAME'):
                 _ = send_bulk_template_reminders(now.year, now.month)
             else:
-                # Fallback: send simple WhatsApp text reminders to unpaid members
-                unpaid = Payment.query.filter_by(year=now.year, month=now.month, status='Unpaid').all()
-                for p in unpaid:
-                    m = db.session.get(Member, p.member_id)
-                    if not m:
-                        continue
-                    phone = _normalize_phone(m.phone or '')
-                    if not phone:
-                        continue
-                    month_name = now.strftime('%B')
-                    text = f"Dear {m.name}, your {month_name} {now.year} gym fee is unpaid. Please pay as soon as possible. Thank you!"
-                    send_whatsapp_text(phone, text)
+                _ = send_bulk_text_reminders(now.year, now.month)
         except Exception:
             pass
 
@@ -970,21 +846,97 @@ def admin_required(view_func):
     from functools import wraps
     @wraps(view_func)
     def wrapper(*args, **kwargs):
-        if not session.get('user_id'):
+        uid = session.get('user_id')
+        if not uid:
             return redirect(url_for('login', next=request.path))
-        try:
-            uid = session.get('user_id')
-            user = db.session.get(User, uid) if uid else None
-            is_admin = bool(user and (user.role or 'staff') == 'admin')
-        except Exception:
-            is_admin = False
-        if not is_admin:
-            wants_json = request.path.startswith('/api') or 'application/json' in (request.headers.get('Accept') or '')
-            if wants_json:
-                return jsonify({'ok': False, 'error': 'Admin only'}), 403
+        user = db.session.get(User, uid)
+        if not user or (user.role or 'staff') != 'admin':
+            flash('Admin access required', 'warning')
             return redirect(url_for('dashboard'))
         return view_func(*args, **kwargs)
     return wrapper
+
+# Auth routes
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        username = request.form.get('username', '').strip()
+        password = request.form.get('password', '')
+        user = User.query.filter_by(username=username).first()
+        if user and check_password_hash(user.password_hash, password):
+            session['user_id'] = user.id
+            session['username'] = user.username
+            _log_login_event(user, 'password')
+            # Optional: create backup on login
+            try:
+                trigger_backup_on_login()
+                if os.getenv('AUTO_BACKUP_ON_LOGIN', '0') not in ('0','false','False','') and 'local' in (os.getenv('AUTO_BACKUP_DEST', 'local').lower()):
+                    flash('Backup created after login (see backups folder).', 'info')
+            except Exception:
+                pass
+            next_url = request.args.get('next') or url_for('dashboard')
+            return redirect(next_url)
+        flash('Invalid username or password', 'danger')
+    # Google OAuth status for UX
+    gid = os.getenv('GOOGLE_CLIENT_ID')
+    gsecret = os.getenv('GOOGLE_CLIENT_SECRET')
+    google_missing = []
+    if not gid:
+        google_missing.append('GOOGLE_CLIENT_ID')
+    if not gsecret:
+        google_missing.append('GOOGLE_CLIENT_SECRET')
+    google_ready = len(google_missing) == 0
+    template = 'login_modern.html'
+    if request.args.get('legacy') == '1':
+        template = 'login.html'
+    return render_template(template, gym_name=get_gym_name(), google_ready=google_ready, google_missing=google_missing, google_client_id=gid or '')
+
+
+@app.route('/auth/google/verify', methods=['POST'])
+def auth_google_verify():
+    data = request.get_json(silent=True) or {}
+    cred = data.get('credential') or ''
+    client_id = os.getenv('GOOGLE_CLIENT_ID') or ''
+    if not cred or not client_id:
+        return jsonify({'ok': False, 'error': 'missing token or client id'}), 400
+    try:
+        idinfo = google_id_token.verify_oauth2_token(cred, google_requests.Request(), client_id)
+        # idinfo contains 'sub', 'email', 'email_verified', 'name', 'picture' etc.
+        if not idinfo.get('email_verified', False):
+            return jsonify({'ok': False, 'error': 'email not verified'}), 400
+        sub = idinfo.get('sub')
+        email = idinfo.get('email') or ''
+        name = idinfo.get('name') or email or 'user'
+    except Exception as e:
+        return jsonify({'ok': False, 'error': f'invalid token: {e}'}), 400
+
+    # Reuse same user linking logic as oauth callback
+    acct = OAuthAccount.query.filter_by(provider='google', provider_id=sub).first()
+    if acct:
+        user = db.session.get(User, acct.user_id)
+    else:
+        base_username = email or name.replace(' ', '').lower()
+        username = base_username or f'user{sub[:6]}'
+        suffix = 1
+        orig = username
+        while User.query.filter_by(username=username).first() is not None:
+            suffix += 1
+            username = f"{orig}{suffix}"
+        user = User(username=username, password_hash=generate_password_hash(os.urandom(16).hex()))
+        db.session.add(user)
+        db.session.commit()
+        acct = OAuthAccount(provider='google', provider_id=sub, user_id=user.id)
+        db.session.add(acct)
+        db.session.commit()
+
+    session['user_id'] = user.id
+    session['username'] = user.username
+    _log_login_event(user, 'google-oauth')
+    try:
+        trigger_backup_on_login()
+    except Exception:
+        pass
+    return jsonify({'ok': True, 'username': user.username})
 
 def payment_rollover_job():
     with app.app_context():
@@ -1024,48 +976,6 @@ def register():
         session['username'] = user.username
         return redirect(url_for('dashboard'))
     return render_template('register.html', gym_name=get_gym_name())
-
-@app.route('/login', methods=['GET', 'POST'])
-def login():
-    """Login page endpoint referenced by auth redirects.
-    Supports Google OAuth and local username/password.
-    """
-    if request.method == 'POST':
-        username = (request.form.get('username') or '').strip()
-        password = request.form.get('password') or ''
-        if not username or not password:
-            flash('Username and password are required', 'warning')
-            return render_template('login.html', gym_name=get_gym_name())
-        user = User.query.filter_by(username=username).first()
-        try:
-            from werkzeug.security import check_password_hash
-            valid = bool(user and check_password_hash(user.password_hash or '', password))
-        except Exception:
-            valid = False
-        if not valid:
-            flash('Invalid credentials', 'danger')
-            return render_template('login.html', gym_name=get_gym_name())
-        session['user_id'] = user.id
-        session['username'] = user.username
-        _log_login_event(user, 'local-password')
-        next_url = request.args.get('next') or url_for('dashboard')
-        return redirect(next_url)
-    # GET
-    try:
-        return render_template('login.html', gym_name=get_gym_name())
-    except Exception:
-        # Minimal fallback when template is missing
-        return (
-            '<html><body style="font-family:sans-serif">'
-            '<h3>Login</h3>'
-            '<form method="post">'
-            '<input name="username" placeholder="Username" />'
-            '<input name="password" type="password" placeholder="Password" />'
-            '<button type="submit">Sign In</button>'
-            '</form>'
-            '<p style="margin-top:10px"><a href="/login/google">Continue with Google</a></p>'
-            '</body></html>'
-        )
 
 @app.route('/logout')
 def logout():
@@ -1119,22 +1029,6 @@ def dashboard():
         is_admin=is_admin
     )
 
-@app.route('/dashboard/excel')
-@login_required
-def excel_dashboard():
-    """Excel data management dashboard."""
-    gym_name = get_gym_name()
-    logo_url = get_setting('logo_filename') or ''
-    return render_template('excel_dashboard.html', gym_name=gym_name, logo_url=logo_url, username=session.get('username'))
-
-@app.route('/dashboard/analytics')
-@login_required
-def analytics_dashboard():
-    """Advanced analytics dashboard."""
-    gym_name = get_gym_name()
-    logo_url = get_setting('logo_filename') or ''
-    return render_template('analytics.html', gym_name=gym_name, logo_url=logo_url, username=session.get('username'))
-
 @app.route('/api/stats/monthly')
 @login_required
 def stats_monthly():
@@ -1142,29 +1036,13 @@ def stats_monthly():
         year = int(request.args.get('year') or datetime.now().year)
     except ValueError:
         return jsonify({"error":"invalid year"}), 400
-    
-    # Optimized: Single query with GROUP BY instead of 36 separate queries
-    results = db.session.query(
-        Payment.month,
-        Payment.status,
-        func.count(Payment.id).label('count')
-    ).filter_by(year=year).group_by(Payment.month, Payment.status).all()
-    
-    # Initialize arrays with zeros for all 12 months
-    paid = [0] * 12
-    unpaid = [0] * 12
-    na = [0] * 12
-    
-    # Fill in actual counts from query results
-    for month, status, count in results:
-        idx = month - 1  # Convert 1-based month to 0-based index
-        if status == 'Paid':
-            paid[idx] = count
-        elif status == 'Unpaid':
-            unpaid[idx] = count
-        elif status == 'N/A':
-            na[idx] = count
-    
+    paid = []
+    unpaid = []
+    na = []
+    for m in range(1, 12+1):
+        paid.append(Payment.query.filter_by(year=year, month=m, status='Paid').count())
+        unpaid.append(Payment.query.filter_by(year=year, month=m, status='Unpaid').count())
+        na.append(Payment.query.filter_by(year=year, month=m, status='N/A').count())
     return jsonify({"year": year, "paid": paid, "unpaid": unpaid, "na": na})
 
 @app.route('/login/google')
@@ -1210,17 +1088,32 @@ def auth_google_callback():
     session['user_id'] = user.id
     session['username'] = user.username
     _log_login_event(user, 'google-oauth')
-    # Optionally trigger backup on login (function not implemented)
-    # try:
-    #     trigger_backup_on_login()
-    # except Exception:
-    #     pass
+    try:
+        trigger_backup_on_login()
+    except Exception:
+        pass
     next_url = request.args.get('next') or url_for('dashboard')
     return redirect(next_url)
 
+# Simple homepage redirects to dashboard (auth required)
+@app.route('/')
+def home():
+    if session.get('user_id'):
+        return redirect(url_for('dashboard'))
+    return redirect(url_for('login'))
 
 # Common aliases to reduce 404s when typing URLs
+@app.route('/index')
+def index_alias():
+    # Redirect to the members page (requires login)
+    return redirect(url_for('index'))
 
+@app.route('/home')
+def home_alias():
+    # Same behavior as root: send logged-in users to dashboard, else to login
+    if session.get('user_id'):
+        return redirect(url_for('dashboard'))
+    return redirect(url_for('login'))
 
 # Members page (requires login) - keeps existing template
 @app.route('/members')
@@ -1233,16 +1126,119 @@ def index():
     default_cc = get_setting('whatsapp_default_country_code') or '92'
     return render_template('index.html', members=members, gym_name=get_gym_name(), currency_code=currency_code, monthly_price=monthly_price, logo_url=logo_url, default_cc=default_cc)
 
-## Duplicate block removed: add_member (kept first definition above)
+# API: add member
+@app.route('/api/members', methods=['POST'])
+@login_required
+def add_member():
+    data = request.json
+    name = data.get('name')
+    phone = data.get('phone')
+    admission = data.get('admission_date')
+    email = (data.get('email') or '').strip() or None
+    training_type = (data.get('training_type') or 'standard').lower().strip()
+    special_tag = bool(data.get('special_tag'))
+    custom_training = (data.get('custom_training') or '').strip() or None
+    monthly_fee = None
+    try:
+        if data.get('monthly_fee') not in (None, ''):
+            monthly_fee = float(data.get('monthly_fee'))
+    except Exception:
+        monthly_fee = None
+    if not (name and admission):
+        return jsonify({"error":"name and admission_date required"}), 400
+    admission_date = datetime.fromisoformat(admission).date()
+    plan_type = (data.get('plan_type') or 'monthly').lower()
+    if plan_type not in ('monthly','yearly'):
+        plan_type = 'monthly'
+    if training_type not in ('standard','personal','cardio','other'):
+        training_type = 'standard'
+    if training_type == 'other':
+        # store as standard fallback but keep custom_training text
+        training_type = 'standard'
+    m = Member(name=name, phone=phone, email=email, training_type=training_type, custom_training=custom_training, monthly_fee=monthly_fee, special_tag=special_tag, admission_date=admission_date, plan_type=plan_type, referral_code=_gen_referral_code())
+    db.session.add(m)
+    db.session.commit()
+    # initialize payment rows for the admission year
+    for month in range(1,13):
+        status = "N/A" if datetime(admission_date.year, month, 1).date() < admission_date else "Unpaid"
+        p = Payment(member_id=m.id, year=admission_date.year, month=month, status=status)
+        db.session.add(p)
+    db.session.commit()
+    append_audit('member.create', {'member_id': m.id, 'name': m.name, 'phone': m.phone, 'admission_date': m.admission_date.isoformat(), 'plan_type': m.plan_type})
+    return jsonify(m.to_dict()), 201
 
-## Duplicate block removed: list_members (kept first definition above)
+# API: list members
+@app.route('/api/members', methods=['GET'])
+@login_required
+def list_members():
+    q = (request.args.get('search') or '').strip()
+    query = Member.query
+    if q:
+        like = f"%{q}%"
+        filters = [Member.name.ilike(like), Member.phone.ilike(like)]
+        # Support searching by Serial No (e.g., 1001 or #1001)
+        s = q
+        if s.startswith('#'):
+            s = s[1:]
+        if s.isdigit():
+            num = int(s)
+            # If it looks like a serial (1001+), map to id = serial - 1000
+            if num >= 1001:
+                filters.append(Member.id == (num - 1000))
+            else:
+                # Also allow direct id matching
+                filters.append(Member.id == num)
+        query = query.filter(or_(*filters))
+    members = query.order_by(Member.id.desc()).all()
+    return jsonify([m.to_dict() for m in members])
 
-# Duplicate removed: get_member (kept first definition above)
+# API: get single member
+@app.route('/api/members/<int:member_id>', methods=['GET'])
+@login_required
+def get_member(member_id):
+    m = Member.query.get_or_404(member_id)
+    return jsonify(m.to_dict())
 
 
-# Duplicate removed: delete_member (kept first definition above)
+# API: delete member (remove payments and photo files)
+@app.route('/api/members/<int:member_id>', methods=['DELETE'])
+@login_required
+def delete_member(member_id):
+    m = Member.query.get_or_404(member_id)
+    # delete related payments
+    Payment.query.filter_by(member_id=member_id).delete()
+    # delete any stored photos
+    for e in ALLOWED_IMAGE_EXTS:
+        pth = os.path.join(UPLOAD_FOLDER, f"member_{member_id}{e}")
+        try:
+            if os.path.exists(pth):
+                os.remove(pth)
+        except Exception:
+            pass
+    db.session.delete(m)
+    db.session.commit()
+    append_audit('member.delete', {'member_id': member_id})
+    return jsonify({"ok": True})
 
-# Duplicate removed: update_member (kept first definition above)
+# API: update member (name, phone, admission_date, plan_type, access_tier)
+@app.route('/api/members/<int:member_id>', methods=['PUT'])
+@login_required
+def update_member(member_id):
+    m = Member.query.get_or_404(member_id)
+    data = request.json or {}
+    changed = {}
+    name = (data.get('name') or '').strip()
+    if name:
+        m.name = name; changed['name'] = name
+    phone = (data.get('phone') or '').strip()
+    if phone:
+        m.phone = phone; changed['phone'] = phone
+    admission = (data.get('admission_date') or '').strip()
+    if admission:
+        try:
+            m.admission_date = datetime.fromisoformat(admission).date(); changed['admission_date'] = m.admission_date.isoformat()
+        except Exception:
+            pass
     plan_type = (data.get('plan_type') or '').lower().strip()
     if plan_type in ('monthly','yearly'):
         m.plan_type = plan_type; changed['plan_type'] = plan_type
@@ -1268,19 +1264,77 @@ def index():
             pass
     if 'special_tag' in data:
         m.special_tag = bool(data.get('special_tag')); changed['special_tag'] = bool(data.get('special_tag'))
-    # Duplicate removed: end of update_member block
+    if changed:
+        db.session.commit()
+        append_audit('member.update', {'member_id': m.id, **changed, 'user_id': session.get('user_id')})
+    return jsonify({'ok': True, 'member': m.to_dict(), 'changed': changed})
 
 
-# Duplicate removed: upload_member_photo (kept first definition above)
+# API: upload member photo
+@app.route('/api/members/<int:member_id>/photo', methods=['POST'])
+@login_required
+def upload_member_photo(member_id):
+    _ = Member.query.get_or_404(member_id)
+    if 'photo' not in request.files:
+        return jsonify({"ok": False, "error": "No photo file provided (field name 'photo')"}), 400
+    f = request.files['photo']
+    if not f or (f.filename or '').strip() == '':
+        return jsonify({"ok": False, "error": "Empty file"}), 400
+    ok, resp = _save_member_image(member_id, f)
+    if ok:
+        return jsonify({"ok": True, "image_url": resp})
+    return jsonify({"ok": False, "error": resp}), 400
 
 # API: get member payments
-# Duplicate removed: get_payments (kept first definition above)
+@app.route('/api/members/<int:member_id>/payments', methods=['GET'])
+@login_required
+def get_payments(member_id):
+    payments = Payment.query.filter_by(member_id=member_id).order_by(Payment.year, Payment.month).all()
+    return jsonify([p.to_dict() for p in payments])
 
 # API: update payment (mark paid/unpaid)
-# Duplicate removed: update_payment (kept first definition above)
+@app.route('/api/payments/<int:payment_id>', methods=['PUT'])
+@login_required
+def update_payment(payment_id):
+    p = Payment.query.get_or_404(payment_id)
+    data = request.json
+    status = data.get('status')
+    if status not in ('Paid','Unpaid','N/A'):
+        return jsonify({"error":"status must be Paid, Unpaid or N/A"}), 400
+    p.status = status
+    db.session.commit()
+    append_audit('payment.update', {'payment_id': payment_id, 'status': status, 'user_id': session.get('user_id')})
+    return jsonify(p.to_dict())
 
 # Export member payments to excel
-# Duplicate removed: update_member (kept first definition above)
+@app.route('/api/members/<int:member_id>/export', methods=['GET'])
+@login_required
+def export_member(member_id):
+    member = Member.query.get_or_404(member_id)
+    payments = Payment.query.filter_by(member_id=member_id).order_by(Payment.year, Payment.month).all()
+    rows = []
+    for p in payments:
+        rows.append({"Year": p.year, "Month": p.month, "Status": p.status})
+    df = pd.DataFrame(rows)
+    out_path = os.path.join(BASE_DIR, f"member_{member_id}_payments.xlsx")
+    df.to_excel(out_path, index=False)
+    return send_file(out_path, as_attachment=True)
+
+def ensure_payment_rows(member: Member, year: int):
+    # Create payment rows for a year if missing
+    existing = {(p.month) for p in Payment.query.filter_by(member_id=member.id, year=year).all()}
+    for m in range(1, 13):
+        if m in existing:
+            continue
+        status = 'Unpaid'
+        if year == member.admission_date.year:
+            first_day = datetime(year, m, 1).date()
+            status = 'N/A' if first_day < member.admission_date else 'Unpaid'
+        p = Payment(member_id=member.id, year=year, month=m, status=status)
+        db.session.add(p)
+    db.session.commit()
+
+@app.route('/api/members/<int:member_id>/plan', methods=['PUT'])
 @login_required
 def set_member_plan(member_id):
     m = Member.query.get_or_404(member_id)
@@ -1390,25 +1444,6 @@ def get_upload(file_id):
         detail['rows'] = []
     return jsonify(detail)
 
-@app.route('/api/uploads/<int:file_id>', methods=['DELETE'])
-@login_required
-def delete_upload(file_id: int):
-    """Delete an uploaded data file record and its stored file from disk."""
-    f = UploadedFile.query.get_or_404(file_id)
-    storage_dir = os.path.join(BASE_DIR, 'data_uploads')
-    file_path = os.path.join(storage_dir, f.stored_name or '')
-    # Remove DB record first to avoid partial deletes blocking
-    db.session.delete(f)
-    db.session.commit()
-    # Best-effort file removal
-    try:
-        if f.stored_name and os.path.isfile(file_path):
-            os.remove(file_path)
-    except Exception:
-        pass
-    append_audit('data.upload.delete', {'file_id': file_id, 'user_id': session.get('user_id')})
-    return jsonify({'ok': True, 'deleted_id': file_id})
-
 @app.route('/api/uploads', methods=['POST'])
 @login_required
 def upload_data_file():
@@ -1417,22 +1452,10 @@ def upload_data_file():
     f = request.files['file']
     if not f or not f.filename:
         return jsonify({'ok': False, 'error': 'empty filename'}), 400
-    
-    # Validate file extension
     orig = f.filename
-    ext = os.path.splitext(orig)[1].lower()
-    if ext not in ALLOWED_DATA_EXTS:
-        return jsonify({'ok': False, 'error': f'Invalid file type. Allowed: {", ".join(ALLOWED_DATA_EXTS)}'}), 400
-    
     data = f.read()
     if not data:
         return jsonify({'ok': False, 'error': 'empty file'}), 400
-    
-    # Validate file size
-    if len(data) > MAX_DATA_FILE_SIZE:
-        size_mb = MAX_DATA_FILE_SIZE / (1024 * 1024)
-        return jsonify({'ok': False, 'error': f'File too large. Maximum size: {size_mb}MB'}), 400
-    
     digest = _hash_bytes(data)
     # Duplicate content handling: return existing record instead of error
     existing_upload = UploadedFile.query.filter_by(content_hash=digest).first()
@@ -1510,49 +1533,22 @@ def fees_page():
 @login_required
 def fees_api():
     try:
-        # Use timezone-aware defaults when present
-        from datetime import timezone
-        year = int(request.args.get('year') or datetime.now(timezone.utc).year)
-        month = int(request.args.get('month') or datetime.now(timezone.utc).month)
-    except Exception:
+        year = int(request.args.get('year') or datetime.now().year)
+        month = int(request.args.get('month') or datetime.now().month)
+    except ValueError:
         return jsonify({"error": "invalid year/month"}), 400
-
-    # Single query with LEFT OUTER JOIN to include members without payments
-    query = db.session.query(
-        Member,
-        Payment.status
-    ).outerjoin(
-        Payment,
-        (Payment.member_id == Member.id) &
-        (Payment.year == year) &
-        (Payment.month == month)
-    ).order_by(Member.id)
-
-    member_payment_tuples = query.all()
+    members = Member.query.order_by(Member.id).all()
     results = []
-
-    for member, status_from_join in member_payment_tuples:
-        m_dict = member.to_dict()
-
-        # Determine status based on join result and admission date
-        if status_from_join is None:
-            month_date = datetime(year, month, 1).date()
-            if month_date < member.admission_date:
-                current_status = 'N/A'
-            else:
-                current_status = 'Unpaid'
-        else:
-            current_status = status_from_join
-
-        m_dict['current_fee_status'] = current_status
-
+    for m in members:
+        ensure_payment_rows(m, year)
+        p = Payment.query.filter_by(member_id=m.id, year=year, month=month).first()
+        status = p.status if p else 'Unpaid'
         results.append({
-            'member': m_dict,
+            'member': m.to_dict(),
             'year': year,
             'month': month,
-            'status': current_status
+            'status': status
         })
-
     return jsonify(results)
 
 @app.route('/api/fees/remind', methods=['POST'])
@@ -1563,414 +1559,8 @@ def fees_remind():
         month = int(request.args.get('month') or datetime.now().month)
     except ValueError:
         return jsonify({"ok": False, "error": "invalid year/month"}), 400
-    
-    unpaid = Payment.query.filter_by(year=year, month=month, status='Unpaid').all()
-    sent, failed = 0, 0
-    for p in unpaid:
-        m = db.session.get(Member, p.member_id)
-        if not m:
-            continue
-        phone = _normalize_phone(m.phone or '')
-        if not phone:
-            failed += 1
-            continue
-        month_name = datetime(year, month, 1).strftime('%B')
-        text = f"Dear {m.name}, your {month_name} {year} gym fee is unpaid. Please pay as soon as possible. Thank you!"
-        ok, _ = send_whatsapp_text(phone, text)
-        if ok:
-            sent += 1
-        else:
-            failed += 1
-    return jsonify({"ok": True, "sent": sent, "failed": failed})
-
-@app.route('/api/backup/create', methods=['POST'])
-@login_required
-def backup_create():
-    """Create a backup ZIP file with database and uploads."""
-    try:
-        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-        backup_filename = f"backup_{timestamp}.zip"
-        backup_dir = os.path.join(os.path.dirname(__file__), 'backups')
-        os.makedirs(backup_dir, exist_ok=True)
-        backup_path = os.path.join(backup_dir, backup_filename)
-        
-        with zipfile.ZipFile(backup_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-            # Add database file
-            db_path = os.path.join(os.path.dirname(__file__), 'gym.db')
-            if os.path.exists(db_path):
-                zipf.write(db_path, 'gym.db')
-            # Add uploads directory
-            uploads_dir = os.path.join(os.path.dirname(__file__), 'static', 'uploads')
-            if os.path.exists(uploads_dir):
-                for root, dirs, files in os.walk(uploads_dir):
-                    for file in files:
-                        file_path = os.path.join(root, file)
-                        arcname = os.path.join('static', 'uploads', os.path.relpath(file_path, uploads_dir))
-                        zipf.write(file_path, arcname)
-        
-        return jsonify({"ok": True, "filename": backup_filename, "path": backup_path})
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-@app.route('/api/backup/download', methods=['GET'])
-@login_required
-def backup_download():
-    """Download the most recent backup file."""
-    try:
-        backup_dir = os.path.join(os.path.dirname(__file__), 'backups')
-        if not os.path.exists(backup_dir):
-            return jsonify({"ok": False, "error": "No backups directory found"}), 404
-        backups = [f for f in os.listdir(backup_dir) if f.endswith('.zip')]
-        if not backups:
-            return jsonify({"ok": False, "error": "No backups found"}), 404
-        backups.sort(reverse=True)
-        latest = backups[0]
-        backup_path = os.path.join(backup_dir, latest)
-        return send_file(backup_path, as_attachment=True, download_name=latest)
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-@app.route('/api/backup/list', methods=['GET'])
-@login_required
-def backup_list():
-    """List all available backup files."""
-    try:
-        backup_dir = os.path.join(os.path.dirname(__file__), 'backups')
-        if not os.path.exists(backup_dir):
-            return jsonify({"ok": True, "backups": []})
-        backups = []
-        for f in os.listdir(backup_dir):
-            if f.endswith('.zip'):
-                file_path = os.path.join(backup_dir, f)
-                size = os.path.getsize(file_path)
-                created = datetime.fromtimestamp(os.path.getctime(file_path)).isoformat()
-                backups.append({"filename": f, "size": size, "created": created})
-        backups.sort(key=lambda x: x['created'], reverse=True)
-        return jsonify({"ok": True, "backups": backups})
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-@app.route('/api/system/reset', methods=['POST'])
-@login_required
-def system_reset():
-    """Reset system to factory defaults (clear all data)."""
-    try:
-        confirm = request.json.get('confirm')
-        if confirm != 'RESET':
-            return jsonify({"ok": False, "error": "Confirmation required"}), 400
-        # Drop all tables and recreate
-        db.drop_all()
-        db.create_all()
-        return jsonify({"ok": True, "message": "System reset to factory defaults"})
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-# ============= ADVANCED FEATURES =============
-
-@app.route('/api/attendance/checkin', methods=['POST'])
-@login_required
-def attendance_checkin():
-    """Check in a member"""
-    try:
-        member_id = request.json.get('member_id')
-        notes = request.json.get('notes', '')
-        
-        if not member_id:
-            return jsonify({"ok": False, "error": "member_id required"}), 400
-        
-        member = db.session.get(Member, member_id)
-        if not member:
-            return jsonify({"ok": False, "error": "Member not found"}), 404
-        
-        today = datetime.now().date()
-        # Check if already checked in today
-        existing = Attendance.query.filter_by(member_id=member_id, date=today).first()
-        if existing and not existing.check_out:
-            return jsonify({"ok": False, "error": "Already checked in today"}), 400
-        
-        attendance = Attendance(
-            member_id=member_id,
-            check_in=datetime.now(),
-            date=today,
-            notes=notes
-        )
-        db.session.add(attendance)
-        db.session.commit()
-        
-        return jsonify({"ok": True, "attendance": attendance.to_dict()})
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-@app.route('/api/attendance/checkout', methods=['POST'])
-@login_required
-def attendance_checkout():
-    """Check out a member"""
-    try:
-        member_id = request.json.get('member_id')
-        
-        if not member_id:
-            return jsonify({"ok": False, "error": "member_id required"}), 400
-        
-        today = datetime.now().date()
-        attendance = Attendance.query.filter_by(
-            member_id=member_id,
-            date=today
-        ).filter(Attendance.check_out.is_(None)).first()
-        
-        if not attendance:
-            return jsonify({"ok": False, "error": "No active check-in found"}), 404
-        
-        attendance.check_out = datetime.now()
-        db.session.commit()
-        
-        return jsonify({"ok": True, "attendance": attendance.to_dict()})
-    except Exception as e:
-        db.session.rollback()
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-@app.route('/api/attendance/today', methods=['GET'])
-@login_required
-def attendance_today():
-    """Get today's attendance"""
-    try:
-        today = datetime.now().date()
-        records = Attendance.query.filter_by(date=today).all()
-        
-        result = []
-        for att in records:
-            member = db.session.get(Member, att.member_id)
-            data = att.to_dict()
-            data['member'] = member.to_dict() if member else None
-            result.append(data)
-        
-        return jsonify({"ok": True, "attendance": result, "count": len(result)})
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-@app.route('/api/attendance/history', methods=['GET'])
-@login_required
-def attendance_history():
-    """Get attendance history for a member or date range"""
-    try:
-        member_id = request.args.get('member_id', type=int)
-        date_from = request.args.get('date_from')
-        date_to = request.args.get('date_to')
-        
-        query = Attendance.query
-        
-        if member_id:
-            query = query.filter_by(member_id=member_id)
-        
-        if date_from:
-            query = query.filter(Attendance.date >= datetime.strptime(date_from, '%Y-%m-%d').date())
-        
-        if date_to:
-            query = query.filter(Attendance.date <= datetime.strptime(date_to, '%Y-%m-%d').date())
-        
-        records = query.order_by(Attendance.check_in.desc()).limit(100).all()
-        
-        result = []
-        for att in records:
-            member = db.session.get(Member, att.member_id)
-            data = att.to_dict()
-            data['member_name'] = member.name if member else 'Unknown'
-            result.append(data)
-        
-        return jsonify({"ok": True, "attendance": result})
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-@app.route('/api/analytics/overview', methods=['GET'])
-@login_required
-def analytics_overview():
-    """Get comprehensive analytics overview"""
-    try:
-        now = datetime.now()
-        today = now.date()
-        
-        # Total members
-        total_members = Member.query.count()
-        active_members = Member.query.filter_by(is_active=True).count()
-        
-        # This month payments
-        paid_this_month = Payment.query.filter_by(
-            year=now.year, month=now.month, status='Paid'
-        ).count()
-        unpaid_this_month = Payment.query.filter_by(
-            year=now.year, month=now.month, status='Unpaid'
-        ).count()
-        
-        # Revenue this month
-        revenue_this_month = db.session.query(func.sum(PaymentTransaction.amount)).filter(
-            PaymentTransaction.year == now.year,
-            PaymentTransaction.month == now.month
-        ).scalar() or 0.0
-        
-        # Attendance today
-        attendance_today = Attendance.query.filter_by(date=today).count()
-        
-        # New members this month
-        new_members = Member.query.filter(
-            func.extract('year', Member.admission_date) == now.year,
-            func.extract('month', Member.admission_date) == now.month
-        ).count()
-        
-        # Training type breakdown
-        training_breakdown = {}
-        for row in db.session.query(Member.training_type, func.count(Member.id)).group_by(Member.training_type).all():
-            training_breakdown[row[0] or 'standard'] = row[1]
-        
-        # Revenue trend (last 6 months)
-        revenue_trend = []
-        for i in range(5, -1, -1):
-            month_date = datetime(now.year, now.month, 1)
-            if now.month - i < 1:
-                month_date = datetime(now.year - 1, 12 + (now.month - i), 1)
-            else:
-                month_date = datetime(now.year, now.month - i, 1)
-            
-            month_revenue = db.session.query(func.sum(PaymentTransaction.amount)).filter(
-                PaymentTransaction.year == month_date.year,
-                PaymentTransaction.month == month_date.month
-            ).scalar() or 0.0
-            
-            revenue_trend.append({
-                "month": month_date.strftime('%b %Y'),
-                "revenue": float(month_revenue)
-            })
-        
-        return jsonify({
-            "ok": True,
-            "total_members": total_members,
-            "active_members": active_members,
-            "paid_this_month": paid_this_month,
-            "unpaid_this_month": unpaid_this_month,
-            "revenue_this_month": float(revenue_this_month),
-            "attendance_today": attendance_today,
-            "new_members_this_month": new_members,
-            "training_breakdown": training_breakdown,
-            "revenue_trend": revenue_trend
-        })
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-@app.route('/api/reminders/bulk', methods=['POST'])
-@login_required
-def reminders_bulk():
-    """Send bulk reminders to selected members"""
-    try:
-        member_ids = request.json.get('member_ids', [])
-        
-        if not member_ids:
-            return jsonify({"ok": False, "error": "No members selected"}), 400
-        
-        now = datetime.now()
-        sent, failed = 0, 0
-        
-        for member_id in member_ids:
-            member = db.session.get(Member, member_id)
-            if not member:
-                failed += 1
-                continue
-            
-            phone = _normalize_phone(member.phone or '')
-            if not phone:
-                failed += 1
-                continue
-            
-            # Check unpaid status
-            payment = Payment.query.filter_by(
-                member_id=member_id,
-                year=now.year,
-                month=now.month,
-                status='Unpaid'
-            ).first()
-            
-            if not payment:
-                continue
-            
-            month_name = now.strftime('%B')
-            text = f"Dear {member.name}, your {month_name} {now.year} gym fee is unpaid. Please pay as soon as possible. Thank you!"
-            ok, _ = send_whatsapp_text(phone, text)
-            
-            if ok:
-                sent += 1
-            else:
-                failed += 1
-        
-        return jsonify({"ok": True, "sent": sent, "failed": failed})
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
-
-@app.route('/api/reports/monthly', methods=['GET'])
-@login_required
-def reports_monthly():
-    """Generate monthly report"""
-    try:
-        year = int(request.args.get('year', datetime.now().year))
-        month = int(request.args.get('month', datetime.now().month))
-        
-        # Payment stats
-        paid = Payment.query.filter_by(year=year, month=month, status='Paid').count()
-        unpaid = Payment.query.filter_by(year=year, month=month, status='Unpaid').count()
-        na = Payment.query.filter_by(year=year, month=month, status='N/A').count()
-        
-        # Revenue
-        revenue = db.session.query(func.sum(PaymentTransaction.amount)).filter(
-            PaymentTransaction.year == year,
-            PaymentTransaction.month == month
-        ).scalar() or 0.0
-        
-        # Attendance stats
-        month_start = datetime(year, month, 1).date()
-        if month == 12:
-            month_end = datetime(year + 1, 1, 1).date()
-        else:
-            month_end = datetime(year, month + 1, 1).date()
-        
-        total_attendance = Attendance.query.filter(
-            Attendance.date >= month_start,
-            Attendance.date < month_end
-        ).count()
-        
-        unique_members = db.session.query(func.count(func.distinct(Attendance.member_id))).filter(
-            Attendance.date >= month_start,
-            Attendance.date < month_end
-        ).scalar() or 0
-        
-        # Top attending members
-        top_attendance = db.session.query(
-            Attendance.member_id,
-            func.count(Attendance.id).label('visits')
-        ).filter(
-            Attendance.date >= month_start,
-            Attendance.date < month_end
-        ).group_by(Attendance.member_id).order_by(func.count(Attendance.id).desc()).limit(10).all()
-        
-        top_members = []
-        for att in top_attendance:
-            member = db.session.get(Member, att.member_id)
-            if member:
-                top_members.append({
-                    "name": member.name,
-                    "visits": att.visits
-                })
-        
-        return jsonify({
-            "ok": True,
-            "year": year,
-            "month": month,
-            "paid": paid,
-            "unpaid": unpaid,
-            "na": na,
-            "revenue": float(revenue),
-            "total_attendance": total_attendance,
-            "unique_members": unique_members,
-            "top_attending_members": top_members
-        })
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e)}), 500
+    result = send_bulk_text_reminders(year, month)
+    return jsonify(result)
 
 @app.route('/api/fees/summary', methods=['GET'])
 @login_required
@@ -2018,49 +1608,36 @@ def fees_month_detail():
     except ValueError:
         return jsonify({"ok": False, "error": "invalid year/month"}), 400
     
-    # Optimized: Use join to load payments with members in a single query
-    payments = db.session.query(Payment, Member).join(
-        Member, Payment.member_id == Member.id
-    ).filter(
-        Payment.year == year,
-        Payment.month == month
-    ).all()
-    
-    paid_count = sum(1 for p, _ in payments if p.status == 'Paid')
-    unpaid_count = sum(1 for p, _ in payments if p.status == 'Unpaid')
+    payments = Payment.query.filter_by(year=year, month=month).all()
+    paid_count = sum(1 for p in payments if p.status == 'Paid')
+    unpaid_count = sum(1 for p in payments if p.status == 'Unpaid')
     
     try:
         currency = get_setting('currency_code') or 'PKR'
     except Exception:
         currency = 'PKR'
     
-    # Get all payment transactions for this month in one query
-    member_ids = [p.member_id for p, _ in payments if p.status == 'Paid']
-    transactions = {}
-    if member_ids:
-        txs = PaymentTransaction.query.filter(
-            PaymentTransaction.member_id.in_(member_ids),
-            PaymentTransaction.year == year,
-            PaymentTransaction.month == month
-        ).order_by(PaymentTransaction.member_id, PaymentTransaction.created_at.desc()).all()
-        
-        # Keep only the latest transaction per member
-        for tx in txs:
-            if tx.member_id not in transactions:
-                transactions[tx.member_id] = tx
-    
     collected = 0.0
     members_data = []
     
-    for p, member in payments:
+    for p in payments:
+        member = db.session.get(Member, p.member_id)
+        if not member:
+            continue
+        
         amount = 0.0
         paid_date = None
         
-        if p.status == 'Paid' and member.id in transactions:
-            tx = transactions[member.id]
-            amount = tx.amount or 0.0
-            paid_date = tx.created_at.strftime('%Y-%m-%d') if tx.created_at else None
-            collected += amount
+        if p.status == 'Paid':
+            tx = PaymentTransaction.query.filter_by(
+                member_id=member.id,
+                year=year,
+                month=month
+            ).order_by(PaymentTransaction.created_at.desc()).first()
+            if tx:
+                amount = tx.amount or 0.0
+                paid_date = tx.created_at.strftime('%Y-%m-%d') if tx.created_at else None
+                collected += amount
         
         members_data.append({
             'member_id': member.id,
@@ -2097,55 +1674,32 @@ def fees_unpaid_summary():
     except Exception:
         monthly_price = 8.0
     
-    # Optimized: Get unpaid counts per member in a single query
-    unpaid_counts = db.session.query(
-        Payment.member_id,
-        func.count(Payment.id).label('unpaid_count')
-    ).filter_by(status='Unpaid').group_by(Payment.member_id).all()
-    
-    # Create a dict for fast lookup
-    unpaid_dict = {member_id: count for member_id, count in unpaid_counts}
-    
-    # Get last paid payment for each member in a single query
-    # Use window function or subquery for best performance
-    last_paid_subquery = db.session.query(
-        Payment.member_id,
-        func.max(Payment.year * 100 + Payment.month).label('max_ym')
-    ).filter_by(status='Paid').group_by(Payment.member_id).subquery()
-    
-    last_paid_payments = db.session.query(
-        Payment.member_id,
-        Payment.year,
-        Payment.month
-    ).join(
-        last_paid_subquery,
-        (Payment.member_id == last_paid_subquery.c.member_id) &
-        ((Payment.year * 100 + Payment.month) == last_paid_subquery.c.max_ym)
-    ).all()
-    
-    last_paid_dict = {
-        member_id: (year, month) 
-        for member_id, year, month in last_paid_payments
-    }
-    
-    # Get only members who have unpaid payments
-    member_ids_with_unpaid = list(unpaid_dict.keys())
-    members = Member.query.filter(Member.id.in_(member_ids_with_unpaid)).all() if member_ids_with_unpaid else []
-    
-    month_names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+    members = Member.query.all()
     unpaid_members = []
     
     for member in members:
-        months_unpaid = unpaid_dict.get(member.id, 0)
-        if months_unpaid == 0:
+        # Find all unpaid payments
+        unpaid_payments = Payment.query.filter_by(
+            member_id=member.id,
+            status='Unpaid'
+        ).order_by(Payment.year.desc(), Payment.month.desc()).all()
+        
+        if not unpaid_payments:
             continue
-            
+        
+        months_unpaid = len(unpaid_payments)
         total_due = months_unpaid * monthly_price
         
+        # Find last paid month
+        last_paid = Payment.query.filter_by(
+            member_id=member.id,
+            status='Paid'
+        ).order_by(Payment.year.desc(), Payment.month.desc()).first()
+        
         last_paid_month = None
-        if member.id in last_paid_dict:
-            year, month = last_paid_dict[member.id]
-            last_paid_month = f"{month_names[month - 1]} {year}"
+        if last_paid:
+            month_names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+            last_paid_month = f"{month_names[last_paid.month - 1]} {last_paid.year}"
         
         unpaid_members.append({
             'id': member.id,
@@ -2168,89 +1722,68 @@ def member_payment_history(member_id):
     if not member:
         return jsonify({'ok': False, 'error': 'Member not found'}), 404
     
-    # Get all payments for this member
-    payments = Payment.query.filter_by(member_id=member_id).order_by(Payment.year, Payment.month).all()
-
-    # Build a dict for quick lookup
-    payment_map = {(p.year, p.month): p for p in payments}
-
-    # Determine admission month/year
-    admission_date = member.admission_date
-    start_year = admission_date.year
-    start_month = admission_date.month
-    now = datetime.now()
-    end_year = now.year
-    end_month = now.month
-
-    # Build a list of (year, month) from admission to now
-    ym_list = []
-    y, m = start_year, start_month
-    while (y < end_year) or (y == end_year and m <= end_month):
-        ym_list.append((y, m))
-        if m == 12:
-            y += 1
-            m = 1
-        else:
-            m += 1
-
-    month_names = ['January', 'February', 'March', 'April', 'May', 'June',
-                   'July', 'August', 'September', 'October', 'November', 'December']
-    payment_list = []
+    payments = Payment.query.filter_by(member_id=member_id).order_by(
+        Payment.year.desc(),
+        Payment.month.desc()
+    ).all()
+    
+    # Find last paid month
     last_paid = None
-    months_unpaid = 0
-    for y, m in ym_list:
-        p = payment_map.get((y, m))
-        status = p.status if p else 'Unpaid'
-        
-        # Skip N/A months (before admission date) - don't include in timeline
-        if status == 'N/A':
-            continue
-        
+    for p in payments:
+        if p.status == 'Paid':
+            month_names = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+            last_paid = f"{month_names[p.month - 1]} {p.year}"
+            break    
+    months_unpaid = sum(1 for p in payments if p.status == 'Unpaid')
+    
+    payment_list = []
+    month_names = ['January', 'February', 'March', 'April', 'May', 'June', 
+                   'July', 'August', 'September', 'October', 'November', 'December']
+    
+    for p in payments:
         amount = None
         paid_date = None
-        if status == 'Paid' and p:
+        
+        if p.status == 'Paid':
             tx = PaymentTransaction.query.filter_by(
                 member_id=member.id,
-                year=y,
-                month=m
+                year=p.year,
+                month=p.month
             ).order_by(PaymentTransaction.created_at.desc()).first()
             if tx:
                 amount = tx.amount
                 paid_date = tx.created_at.strftime('%Y-%m-%d') if tx.created_at else None
-            if not last_paid:
-                last_paid = f"{month_names[m-1]} {y}"
-        if status == 'Unpaid':
-            months_unpaid += 1
+        
         payment_list.append({
-            'year': y,
-            'month': m,
-            'month_name': month_names[m-1],
-            'status': status,
+            'year': p.year,
+            'month': p.month,
+            'month_name': month_names[p.month - 1],
+            'status': p.status,
             'amount': amount,
             'paid_date': paid_date
         })
-
+    
     return jsonify({
         'ok': True,
         'member': {
             'id': member.id,
             'name': member.name,
             'phone': member.phone,
-            'email': member.email or '',
-            'cnic': member.cnic or '',
-            'address': member.address or '',
-            'gender': member.gender or '',
+            'email': member.email,
+            'cnic': member.cnic,
+            'address': member.address,
+            'gender': member.gender,
             'date_of_birth': member.date_of_birth.strftime('%Y-%m-%d') if member.date_of_birth else None,
             'admission_date': member.admission_date.strftime('%Y-%m-%d') if member.admission_date else None,
-            'monthly_price': float(member.monthly_price or member.monthly_fee or 0),
-            'referred_by': member.referred_by or '',
+            'monthly_price': float(member.monthly_price) if member.monthly_price else 0,
+            'referred_by': member.referred_by,
             'is_active': member.is_active,
-            'notes': member.notes or ''
+            'notes': member.notes
         },
         'last_paid_month': last_paid,
         'months_unpaid': months_unpaid,
         'payments': payment_list,
-        'currency': 'PKR'
+        'currency': member.currency or 'PKR'
     })
 
 @app.route('/api/payment/pay-now', methods=['POST'])
@@ -2261,43 +1794,8 @@ def api_payment_pay_now():
         member_id = int(payload.get('member_id') or 0)
     except Exception:
         return jsonify({'ok': False, 'error': 'member_id required'}), 400
-    # Handle month - could be int or string like "2025-12"
-    month_val = payload.get('month')
-    year_val = payload.get('year')
-    
-    if month_val:
-        if isinstance(month_val, str) and '-' in month_val:
-            # Parse "YYYY-MM" format
-            parts = month_val.split('-')
-            if len(parts) == 2:
-                year = int(parts[0])
-                month = int(parts[1])
-            else:
-                month = int(month_val)
-                year = int(year_val) if year_val else datetime.now().year
-        else:
-            month = int(month_val)
-            year = int(year_val) if year_val else datetime.now().year
-    else:
-        # If no month specified, find the oldest unpaid month starting from admission date
-        temp_member = db.session.get(Member, member_id)
-        if temp_member and temp_member.admission_date:
-            oldest_unpaid = Payment.query.filter_by(
-                member_id=member_id, 
-                status='Unpaid'
-            ).order_by(Payment.year.asc(), Payment.month.asc()).first()
-            
-            if oldest_unpaid:
-                year = oldest_unpaid.year
-                month = oldest_unpaid.month
-            else:
-                # No unpaid found, use current month
-                year = datetime.now().year
-                month = datetime.now().month
-        else:
-            year = datetime.now().year
-            month = datetime.now().month
-    
+    year = int(payload.get('year') or datetime.now().year)
+    month = int(payload.get('month') or datetime.now().month)
     method = (payload.get('method') or 'cash').strip()
 
     member = db.session.get(Member, member_id)
@@ -2420,17 +1918,6 @@ def api_fees_mark_paid():
     db.session.add(tx)
     p.status = 'Paid'
     db.session.commit()
-    
-    # Log this payment
-    append_audit('payment.mark-paid', {
-        'member_id': member_id,
-        'year': year,
-        'month': month,
-        'amount': amount,
-        'method': method,
-        'transaction_id': tx.id,
-        'user_id': user_id
-    })
 
     currency = get_setting('currency_code') or 'PKR'
     return jsonify({
@@ -2575,303 +2062,6 @@ def fees_remind_template():
     status = 200 if result.get('ok') else 400
     return jsonify(result), status
 
-
-# Duplicate removed: send_bulk_text_reminders
-@app.route('/api/members/<int:member_id>', methods=['PUT'])
-@login_required
-def update_member(member_id):
-    m = Member.query.get_or_404(member_id)
-    data = request.json or {}
-    changed = {}
-    old_values = {}
-    
-    # Personal Information
-    if 'name' in data:
-        name = (data.get('name') or '').strip()
-        new_val = name or None
-        if m.name != new_val:
-            old_values['name'] = m.name
-            m.name = new_val
-            changed['name'] = m.name
-    
-    if 'phone' in data:
-        phone = (data.get('phone') or '').strip()
-        new_val = phone or None
-        if m.phone != new_val:
-            old_values['phone'] = m.phone
-            m.phone = new_val
-            changed['phone'] = m.phone
-    
-    if 'email' in data:
-        email = (data.get('email') or '').strip()
-        new_val = email or None
-        if m.email != new_val:
-            old_values['email'] = m.email
-            m.email = new_val
-            changed['email'] = m.email
-    
-    if 'cnic' in data:
-        cnic = (data.get('cnic') or '').strip()
-        new_val = cnic or None
-        if m.cnic != new_val:
-            old_values['cnic'] = m.cnic
-            m.cnic = new_val
-            changed['cnic'] = m.cnic
-    
-    if 'address' in data:
-        address = (data.get('address') or '').strip()
-        new_val = address or None
-        if m.address != new_val:
-            old_values['address'] = m.address
-            m.address = new_val
-            changed['address'] = m.address
-    
-    if 'gender' in data:
-        gender = (data.get('gender') or '').strip()
-        new_val = gender or None
-        if m.gender != new_val:
-            old_values['gender'] = m.gender
-            m.gender = new_val
-            changed['gender'] = m.gender
-    
-    if 'date_of_birth' in data:
-        dob = (data.get('date_of_birth') or '').strip()
-        if dob:
-            try:
-                new_dob = datetime.fromisoformat(dob).date()
-                if m.date_of_birth != new_dob:
-                    old_values['date_of_birth'] = m.date_of_birth.isoformat() if m.date_of_birth else None
-                    m.date_of_birth = new_dob
-                    changed['date_of_birth'] = m.date_of_birth.isoformat()
-            except Exception:
-                pass
-        else:
-            if m.date_of_birth is not None:
-                old_values['date_of_birth'] = m.date_of_birth.isoformat()
-                m.date_of_birth = None
-                changed['date_of_birth'] = None
-    
-    # Membership Details
-    if 'admission_date' in data:
-        admission = (data.get('admission_date') or '').strip()
-        if admission:
-            try:
-                new_admission = datetime.fromisoformat(admission).date()
-                if m.admission_date != new_admission:
-                    old_values['admission_date'] = m.admission_date.isoformat() if m.admission_date else None
-                    m.admission_date = new_admission
-                    changed['admission_date'] = m.admission_date.isoformat()
-            except Exception:
-                pass
-        else:
-            if m.admission_date is not None:
-                old_values['admission_date'] = m.admission_date.isoformat()
-                m.admission_date = None
-                changed['admission_date'] = None
-    
-    if 'monthly_price' in data:
-        try:
-            val = data.get('monthly_price')
-            new_fee = float(val) if val not in (None, '') else None
-            if m.monthly_fee != new_fee:
-                old_values['monthly_price'] = m.monthly_fee
-                m.monthly_fee = new_fee
-                changed['monthly_price'] = m.monthly_fee
-        except Exception:
-            pass
-    
-    if 'referred_by' in data:
-        referred_by = (data.get('referred_by') or '').strip()
-        new_val = referred_by or None
-        if m.referred_by != new_val:
-            old_values['referred_by'] = m.referred_by
-            m.referred_by = new_val
-            changed['referred_by'] = m.referred_by
-    
-    if 'is_active' in data:
-        new_active = bool(data.get('is_active'))
-        if m.is_active != new_active:
-            old_values['is_active'] = m.is_active
-            m.is_active = new_active
-            changed['is_active'] = m.is_active
-    
-    if 'notes' in data:
-        notes = (data.get('notes') or '').strip()
-        new_val = notes or None
-        if m.notes != new_val:
-            old_values['notes'] = m.notes
-            m.notes = new_val
-            changed['notes'] = m.notes
-    
-    # Legacy fields support
-    if 'plan_type' in data:
-        plan_type = (data.get('plan_type') or '').lower().strip()
-        if plan_type in ('monthly','yearly'):
-            old_values['plan_type'] = m.plan_type
-            m.plan_type = plan_type; changed['plan_type'] = plan_type
-    
-    if 'access_tier' in data:
-        access_tier = (data.get('access_tier') or '').lower().strip()
-        if access_tier in ('standard','unlimited'):
-            old_values['access_tier'] = m.access_tier
-            m.access_tier = access_tier; changed['access_tier'] = access_tier
-    
-    if 'training_type' in data:
-        training_type = (data.get('training_type') or '').lower().strip()
-        if training_type in ('standard','personal','cardio','other'):
-            if training_type == 'other':
-                training_type = 'standard'
-            old_values['training_type'] = m.training_type
-            m.training_type = training_type; changed['training_type'] = training_type
-    
-    if 'custom_training' in data:
-        old_values['custom_training'] = m.custom_training
-        m.custom_training = (data.get('custom_training') or '').strip() or None; changed['custom_training'] = m.custom_training
-    
-    if 'monthly_fee' in data:
-        try:
-            val = data.get('monthly_fee')
-            if val not in (None, ''):
-                old_values['monthly_fee'] = m.monthly_fee
-                m.monthly_fee = float(val); changed['monthly_fee'] = m.monthly_fee
-            elif val in (None, ''):
-                old_values['monthly_fee'] = m.monthly_fee
-                m.monthly_fee = None; changed['monthly_fee'] = None
-        except Exception:
-            pass
-    
-    if 'special_tag' in data:
-        old_values['special_tag'] = m.special_tag
-        m.special_tag = bool(data.get('special_tag')); changed['special_tag'] = bool(data.get('special_tag'))
-    
-    # Always commit the session to save any changes
-    db.session.commit()
-    
-    # Only create audit log if there were actual changes
-    if changed:
-        append_audit('member.update', {
-            'member_id': m.id, 
-            'old': old_values, 
-            'new': changed, 
-            'user_id': session.get('user_id')
-        })
-    
-    return jsonify({'ok': True, 'member': m.to_dict(), 'changed': changed})
-
-
-# API: upload member photo
-@app.route('/api/members/<int:member_id>/photo', methods=['POST'])
-@login_required
-def upload_member_photo(member_id):
-    _ = Member.query.get_or_404(member_id)
-    if 'photo' not in request.files:
-        return jsonify({"ok": False, "error": "No photo file provided (field name 'photo')"}), 400
-# Duplicate removed: upload_member_photo (kept first definition above)
-
-# API: get member payments
-# Duplicate removed: get_payments (kept first definition above)
-
-# API: update payment (mark paid/unpaid)
-# Duplicate removed: update_payment (kept first definition above)
-
-# Export member payments to excel
-# Duplicate removed: update_member (kept first definition above)
-@login_required
-# Duplicate removed: set_member_plan (kept first definition above)
-# Duplicate removed: record_payment (kept first definition above)
-# Duplicate removed: message_member (kept first definition above)
-# Duplicate removed: list_uploads (kept first definition at line 1200)
-# Duplicate removed: get_upload (kept first definition at line 1215)
-# Duplicate removed: upload_data_file (kept first definition at line 1235)
-# Duplicate removed: fees_page (kept first definition at line 1303)
-# Duplicate removed: fees_api (kept first definition at line 1320)
-
-@login_required
-# Duplicate removed: api_payment_pay_now
-
-# Duplicate removed: api_fees_mark_paid
-
-# Duplicate removed: receipt_view
-
-# Duplicate removed: receipt_for_period
-# Duplicate removed: fees_remind_template
-
-# Duplicate removed: send_monthly_unpaid_template_job
-
-# Common aliases to reduce 404s when typing URLs
-@app.route('/index')
-
-@app.route('/home')
-
-# Members page (requires login) - keeps existing template
-# Duplicate removed: index
-@app.route('/api/members', methods=['GET'])
-@login_required
-def list_members():
-    q = (request.args.get('search') or '').strip()
-    query = Member.query
-    if q:
-        like = f"%{q}%"
-        filters = [Member.name.ilike(like), Member.phone.ilike(like)]
-        # Support searching by Serial No (e.g., 1001 or #1001)
-        s = q
-        if s.startswith('#'):
-            s = s[1:]
-        if s.isdigit():
-            num = int(s)
-            # If it looks like a serial (1001+), map to id = serial - 1000
-            if num >= 1001:
-                filters.append(Member.id == (num - 1000))
-            else:
-                # Also allow direct id matching
-                filters.append(Member.id == num)
-        query = query.filter(or_(*filters))
-    # Sort A–Z by name for consistent listing
-    try:
-        from sqlalchemy import func
-        members = query.order_by(func.lower(Member.name).asc(), Member.id.asc()).all()
-    except Exception:
-        # Fallback if func is unavailable
-        members = query.order_by(Member.name.asc()).all()
-    return jsonify([m.to_dict() for m in members])
-
-@app.route('/api/members/<int:member_id>', methods=['GET'])
-@login_required
-def get_member_detail(member_id):
-    m = Member.query.get_or_404(member_id)
-    member_dict = m.to_dict()
-    
-    # Add payment status info
-    now = datetime.now()
-    current_payment = Payment.query.filter_by(member_id=member_id, year=now.year, month=now.month).first()
-    member_dict['current_fee_status'] = current_payment.status if current_payment else 'N/A'
-    
-    # Add last transaction amount
-    last_txn = PaymentTransaction.query.filter_by(member_id=member_id).order_by(PaymentTransaction.created_at.desc()).first()
-    member_dict['last_tx_amount'] = last_txn.amount if last_txn else None
-    
-    return jsonify(member_dict)
-
-# Duplicate removed: get_member (kept first definition above)
-
-
-# API: delete member (remove payments and photo files)
-# Duplicate removed: delete_member (kept first definition above)
-
-# API: update member (name, phone, admission_date, plan_type, access_tier)
-# Duplicate removed: update_member
-# Duplicate removed: upload_member_photo
-@login_required
-# Duplicate removed: set_member_plan (kept first definition above)
-# Duplicate removed: record_payment (kept first definition above)
-# Duplicate removed: message_member (kept first definition above)
-# Duplicate removed: list_uploads (kept first definition at line 1200)
-# Duplicate removed: get_upload (kept first definition at line 1215)
-# Duplicate removed: upload_data_file (kept first definition at line 1235)
-# Duplicate removed: fees_page (kept first definition at line 1303)
-# Duplicate removed: fees_api (kept first definition at line 1320)
-
-# Duplicate removed: fees_remind_template
 @app.route('/admin/schedule/run-now', methods=['POST'])
 @admin_required
 def schedule_run_now():
@@ -2880,378 +2070,1310 @@ def schedule_run_now():
     status = 200 if res.get('ok') else 400
     return jsonify(res), status
 
-# Duplicate removed: send_monthly_unpaid_template_job
-@app.route('/')
-def home():
-    if session.get('user_id'):
-        return redirect(url_for('dashboard'))
-    return redirect(url_for('login'))
-
-# Common aliases to reduce 404s when typing URLs
-def index_alias():
-    # Redirect to the members page (requires login)
-    return redirect(url_for('index'))
-
-def home_alias():
-    # Same behavior as root: send logged-in users to dashboard, else to login
-    if session.get('user_id'):
-        return redirect(url_for('dashboard'))
-    return redirect(url_for('login'))
-
-# Members page (requires login) - keeps existing template
-# Duplicate removed: index
-@app.route('/api/members', methods=['POST'])
-@login_required
-def add_member():
-    data = request.json
-    name = data.get('name')
-    phone = data.get('phone')
-    admission = data.get('admission_date')
-    email = (data.get('email') or '').strip() or None
-    training_type = (data.get('training_type') or 'standard').lower().strip()
-    special_tag = bool(data.get('special_tag'))
-    custom_training = (data.get('custom_training') or '').strip() or None
-    monthly_fee = None
-    try:
-        if data.get('monthly_fee') not in (None, ''):
-            monthly_fee = float(data.get('monthly_fee'))
-    except Exception:
-        monthly_fee = None
-    if not (name and admission):
-        return jsonify({"error":"name and admission_date required"}), 400
-    admission_date = datetime.fromisoformat(admission).date()
-    plan_type = (data.get('plan_type') or 'monthly').lower()
-    if plan_type not in ('monthly','yearly'):
-        plan_type = 'monthly'
-    if training_type not in ('standard','personal','cardio','other'):
-        training_type = 'standard'
-    if training_type == 'other':
-        # store as standard fallback but keep custom_training text
-        training_type = 'standard'
-    m = Member(name=name, phone=phone, email=email, training_type=training_type, custom_training=custom_training, monthly_fee=monthly_fee, special_tag=special_tag, admission_date=admission_date, plan_type=plan_type, referral_code=_gen_referral_code())
-    db.session.add(m)
-    db.session.commit()
-    # initialize payment rows from admission year to current year + 1
-    current_year = datetime.now().year
-    end_year = current_year + 1
-    admission_month_payment = None
-    for year in range(admission_date.year, end_year + 1):
-        for month in range(1, 13):
-            # Check if this month is before admission date
-            month_date = datetime(year, month, 1).date()
-            if month_date < admission_date:
-                status = "N/A"
-            elif year == admission_date.year and month == admission_date.month:
-                status = "Paid"  # Admission month is automatically marked as paid
-                admission_month_payment = (year, month)
-            else:
-                status = "Unpaid"
-            p = Payment(member_id=m.id, year=year, month=month, status=status)
-            db.session.add(p)
-    db.session.commit()
+def _smart_column_mapper(df_columns):
+    """AI-powered automatic field mapping for Excel/CSV uploads"""
+    column_map = {}
     
-    # Create PaymentTransaction for admission month
-    if admission_month_payment:
-        year, month = admission_month_payment
-        # Determine amount from member's monthly_fee or settings
-        try:
-            amount = float(monthly_fee) if monthly_fee else float(get_setting('monthly_price') or 8)
-        except Exception:
-            amount = 8.0
-        
-        tx = PaymentTransaction(
-            member_id=m.id,
-            year=year,
-            month=month,
-            amount=amount,
-            method='cash',
-            plan_type=plan_type,
-            created_at=admission_date  # Set transaction date to admission date
-        )
-        db.session.add(tx)
-        db.session.commit()
-    append_audit('member.create', {'member_id': m.id, 'name': m.name, 'phone': m.phone, 'admission_date': m.admission_date.isoformat(), 'plan_type': m.plan_type})
-    return jsonify(m.to_dict()), 201
+    # Enhanced column mapping patterns (case-insensitive, multi-language support)
+    patterns = {
+        'name': ['name', 'member name', 'full name', 'fullname', 'student name', 'customer', 'client', 
+                 'naam', 'نام', 'member', 'first name', 'fname', 'last name', 'lname'],
+        'phone': ['phone', 'mobile', 'contact', 'number', 'phone number', 'mobile number', 'whatsapp', 
+                  'contact number', 'cell', 'telephone', 'tel', 'ph', 'رابطہ', 'موبائل'],
+        'email': ['email', 'e-mail', 'mail', 'email address', 'ای میل', 'gmail', 'inbox'],
+        'admission_date': ['admission', 'admission date', 'join date', 'joining date', 'date', 'start date', 
+                          'reg date', 'registration date', 'registered', 'enrolled', 'enroll date', 
+                          'داخلہ', 'تاریخ', 'admission_date', 'joining_date'],
+        'plan_type': ['plan', 'plan type', 'subscription', 'package', 'membership', 'پلان', 
+                      'plan_type', 'subscription_type'],
+        'access_tier': ['access', 'tier', 'access tier', 'level', 'category', 'type', 
+                        'رسائی', 'access_tier'],
+        'training_type': ['training', 'training type', 'workout', 'workout type', 'exercise', 'gym type',
+                         'تربیت', 'training_type', 'workout_type'],
+        'special_tag': ['special', 'special tag', 'vip', 'star', 'premium', 'featured', 
+                       'خاص', 'special_tag', 'vip_member'],
+        'monthly_fee': ['fee', 'monthly fee', 'price', 'amount', 'monthly price', 'monthly_fee', 
+                       'payment', 'cost', 'فیس', 'قیمت'],
+        'cnic': ['cnic', 'id', 'national id', 'identity', 'id card', 'شناختی کارڈ'],
+        'address': ['address', 'location', 'area', 'city', 'پتہ', 'مقام'],
+        'gender': ['gender', 'sex', 'جنس', 'male/female'],
+        'date_of_birth': ['dob', 'date of birth', 'birth date', 'birthday', 'پیدائش'],
+        'referred_by': ['referred', 'referred by', 'referrer', 'reference', 'حوالہ'],
+        'status': ['status', 'member status', 'active', 'is_active', 'active status', 'membership status', 
+                   'حالت', 'صورتحال', 'account status'],
+    }
+    
+    df_cols_lower = {col.lower().strip(): col for col in df_columns}
+    
+    # First pass: exact and partial matches
+    for field, possible_names in patterns.items():
+        for poss in possible_names:
+            poss_lower = poss.lower()
+            # Exact match
+            if poss_lower in df_cols_lower:
+                column_map[field] = df_cols_lower[poss_lower]
+                break
+            # Partial match (column contains pattern)
+            for df_col_lower, original_col in df_cols_lower.items():
+                if poss_lower in df_col_lower or df_col_lower in poss_lower:
+                    if field not in column_map:  # Don't override exact matches
+                        column_map[field] = original_col
+                        break
+    
+    # Second pass: Fuzzy matching for close spellings
+    import difflib
+    for field, possible_names in patterns.items():
+        if field not in column_map:
+            for df_col_lower, original_col in df_cols_lower.items():
+                for poss in possible_names:
+                    # Check similarity ratio (>0.7 means close match)
+                    if difflib.SequenceMatcher(None, poss.lower(), df_col_lower).ratio() > 0.7:
+                        column_map[field] = original_col
+                        break
+                if field in column_map:
+                    break
+    
+    return column_map
 
-# API: list members
-# Duplicate removed: list_members
-@app.route('/api/members/<int:member_id>', methods=['DELETE'])
+@app.route('/admin/members/upload', methods=['POST'])
+@admin_required
+def upload_members_csv():
+    if 'file' not in request.files:
+        return jsonify({"ok": False, "error": "No file uploaded"}), 400
+    f = request.files['file']
+    fname_lower = f.filename.lower()
+    
+    # Support CSV, Excel (.xlsx, .xls), and .xltm
+    if not fname_lower.endswith(('.csv', '.xlsx', '.xls', '.xltm')):
+        return jsonify({"ok": False, "error": "Supported formats: CSV, Excel (.xlsx, .xls, .xltm)"}), 400
+    
+    try:
+        if fname_lower.endswith('.csv'):
+            df = pd.read_csv(f)
+        else:
+            # Excel formats
+            df = pd.read_excel(f, engine='openpyxl' if fname_lower.endswith(('.xlsx', '.xltm')) else None)
+    except Exception as e:
+        return jsonify({"ok": False, "error": f"Failed to parse file: {str(e)}"}), 400
+    
+    # Automatic column mapping
+    col_map = _smart_column_mapper(df.columns.tolist())
+    
+    created = 0
+    updated = 0
+    skipped = 0
+    errors = []
+    
+    for idx, row in df.iterrows():
+        try:
+            # Extract data using smart mapping
+            name = str(row.get(col_map.get('name')) or '').strip() if 'name' in col_map else ''
+            phone = str(row.get(col_map.get('phone')) or '').strip() if 'phone' in col_map else ''
+            admission = str(row.get(col_map.get('admission_date')) or '').strip() if 'admission_date' in col_map else ''
+            plan_type = str(row.get(col_map.get('plan_type')) or 'monthly').lower().strip() if 'plan_type' in col_map else 'monthly'
+            access_tier = str(row.get(col_map.get('access_tier')) or 'standard').lower().strip() if 'access_tier' in col_map else 'standard'
+            email = str(row.get(col_map.get('email')) or '').strip() if 'email' in col_map else ''
+            training_type = str(row.get(col_map.get('training_type')) or 'standard').lower().strip() if 'training_type' in col_map else 'standard'
+            special_tag_raw = str(row.get(col_map.get('special_tag')) or '').strip().lower() if 'special_tag' in col_map else ''
+            special_tag = special_tag_raw in ('1','true','yes','y', 'vip', '⭐')
+            
+            # Extract status (is_active) from file
+            status_raw = str(row.get(col_map.get('status')) or 'active').strip().lower() if 'status' in col_map else 'active'
+            is_active = status_raw in ('1', 'true', 'yes', 'y', 'active', 'فعال', 'کا رہے ہیں')
+            
+            if not name:
+                skipped += 1
+                continue
+            
+            # Parse admission date with multiple formats
+            admission_date = None
+            if admission:
+                for date_format in ['%Y-%m-%d', '%d/%m/%Y', '%m/%d/%Y', '%d-%m-%Y', '%Y/%m/%d']:
+                    try:
+                        admission_date = datetime.strptime(admission, date_format).date()
+                        break
+                    except:
+                        continue
+                        
+                if not admission_date:
+                    try:
+                        admission_date = datetime.fromisoformat(admission).date()
+                    except:
+                        pass
+            
+            if not admission_date:
+                admission_date = datetime.now(timezone.utc).date()
+            
+            # Normalize enums
+            if plan_type not in ('monthly','yearly'):
+                plan_type = 'monthly'
+            if access_tier not in ('standard','unlimited'):
+                access_tier = 'standard'
+            if training_type not in ('standard','personal','cardio'):
+                training_type = 'standard'
+            
+            # Check for duplicate by phone or name
+            existing = None
+            if phone:
+                existing = Member.query.filter_by(phone=phone).first()
+            if not existing and name:
+                existing = Member.query.filter_by(name=name).first()
+
+            if existing:
+                # Merge/update existing member with new details
+                changed = False
+                if email and existing.email != email:
+                    existing.email = email
+                    changed = True
+                if training_type and existing.training_type != training_type:
+                    existing.training_type = training_type
+                    changed = True
+                if existing.special_tag != special_tag:
+                    existing.special_tag = special_tag
+                    changed = True
+                if plan_type and existing.plan_type != plan_type:
+                    existing.plan_type = plan_type
+                    changed = True
+                if access_tier and existing.access_tier != access_tier:
+                    existing.access_tier = access_tier
+                    changed = True
+                # Update status/is_active from file
+                if hasattr(existing, 'is_active') and existing.is_active != is_active:
+                    existing.is_active = is_active
+                    changed = True
+                # Only update admission_date if incoming is earlier (preserve earliest)
+                if admission_date and (not existing.admission_date or admission_date < existing.admission_date):
+                    existing.admission_date = admission_date
+                    changed = True
+                if changed:
+                    db.session.commit()
+                    updated += 1
+                else:
+                    skipped += 1
+                # Ensure payment records exist for the admission year
+                adm_year = (existing.admission_date or admission_date).year
+                for mm in range(1, 12 + 1):
+                    p = Payment.query.filter_by(member_id=existing.id, year=adm_year, month=mm).first()
+                    if not p:
+                        status = "N/A" if datetime(adm_year, mm, 1).date() < (existing.admission_date or admission_date) else "Unpaid"
+                        db.session.add(Payment(member_id=existing.id, year=adm_year, month=mm, status=status))
+                db.session.commit()
+                continue
+
+            # Create new member
+            member_data = {
+                'name': name,
+                'phone': phone,
+                'email': email or None,
+                'training_type': training_type,
+                'special_tag': special_tag,
+                'admission_date': admission_date,
+                'plan_type': plan_type,
+                'access_tier': access_tier,
+                'referral_code': _gen_referral_code()
+            }
+            
+            # Add is_active if Member model has this field
+            if hasattr(Member, 'is_active'):
+                member_data['is_active'] = is_active
+                
+            m = Member(**member_data)
+            db.session.add(m)
+            db.session.commit()
+
+            # Create payment records
+            for mm in range(1, 12 + 1):
+                status = "N/A" if datetime(admission_date.year, mm, 1).date() < admission_date else "Unpaid"
+                db.session.add(Payment(member_id=m.id, year=admission_date.year, month=mm, status=status))
+            db.session.commit()
+            created += 1
+            
+        except Exception as e:
+            errors.append(f"Row {idx + 2}: {str(e)}")
+            skipped += 1
+            continue
+    
+    # Enhanced AI detection response
+    detection_quality = len(col_map) / 8.0  # Score based on how many of 8 core fields detected
+    response = {
+        "ok": True,
+        "created": created,
+        "updated": updated,
+        "skipped": skipped,
+        "ai_detection": {
+            "columns_detected": col_map,
+            "detection_quality": round(detection_quality * 100, 1),  # Percentage
+            "total_columns": len(df.columns),
+            "mapped_columns": len(col_map),
+            "unmapped_columns": [col for col in df.columns if col not in col_map.values()],
+            "confidence": "high" if detection_quality >= 0.75 else "medium" if detection_quality >= 0.5 else "low"
+        }
+    }
+    if errors and len(errors) <= 5:
+        response['errors'] = errors
+    
+    return jsonify(response)
+
+# WhatsApp Cloud API helper
+def _normalize_phone(phone: str) -> str:
+    if not phone:
+        return ''
+    phone = phone.strip()
+    if phone.startswith('+'):
+        return phone
+    # Prefer DB setting, fallback to env, default Pakistan '92'
+    cc = (get_setting('whatsapp_default_country_code') or os.getenv('WHATSAPP_DEFAULT_COUNTRY_CODE') or '92')
+    if cc and not phone.startswith(cc):
+        if not cc.startswith('+'):
+            cc = '+' + cc
+        return cc + phone
+    return phone
+
+def send_whatsapp_message(to_phone: str, text: str) -> tuple[bool, str]:
+    token = os.getenv('WHATSAPP_TOKEN')
+    phone_id = os.getenv('WHATSAPP_PHONE_NUMBER_ID')
+    if not token or not phone_id:
+        return False, 'WhatsApp configuration missing (token/phone id)'
+    url = f"https://graph.facebook.com/v20.0/{phone_id}/messages"
+    headers = {
+        'Authorization': f'Bearer {token}',
+        'Content-Type': 'application/json'
+    }
+    payload = {
+        'messaging_product': 'whatsapp',
+        'to': to_phone,
+        'type': 'text',
+        'text': {'preview_url': False, 'body': text}
+    }
+    try:
+        r = requests.post(url, headers=headers, json=payload, timeout=20)
+    except Exception as e:
+        return False, f"request error: {e}"
+    ok = 200 <= r.status_code < 300
+    try:
+        data = r.json()
+    except Exception:
+        data = {'text': r.text}
+    return ok, (data if ok else f"{r.status_code}: {data}")
+
+def send_bulk_text_reminders(year: int, month: int) -> dict:
+    unpaid = Payment.query.filter_by(year=year, month=month, status='Unpaid').all()
+    sent, failed = 0, 0
+    price = (get_setting('monthly_price') or '8')
+    currency = (get_setting('currency_code') or 'USD')
+    gym = get_gym_name()
+    default_msg = f"Hi {member.name}, your {gym} fee ({price} {currency}) for {month}/{year} may be due. Please pay if pending."
+    for p in unpaid:
+        member = db.session.get(Member, p.member_id)
+        if not member:
+            continue
+        phone = _normalize_phone(member.phone or '')
+        if not phone:
+            failed += 1
+            continue
+        msg = f"Hi {member.name}, your {gym} fee ({price} {currency}) for {month}/{year} is pending. Please pay to stay active."
+        ok, _ = send_whatsapp_message(phone, msg)
+        if ok:
+            sent += 1
+        else:
+            failed += 1
+    return {"ok": True, "sent": sent, "failed": failed}
+
+def _whatsapp_upload_media(filename: str, content: bytes, mime: str = 'application/pdf') -> tuple[bool, str | dict]:
+    token = os.getenv('WHATSAPP_TOKEN')
+    phone_id = os.getenv('WHATSAPP_PHONE_NUMBER_ID')
+    if not token or not phone_id:
+        return False, 'WhatsApp configuration missing (token/phone id)'
+    url = f"https://graph.facebook.com/v20.0/{phone_id}/media"
+    headers = { 'Authorization': f'Bearer {token}' }
+    files = { 'file': (filename, BytesIO(content), mime) }
+    data = { 'messaging_product': 'whatsapp', 'type': mime }
+    try:
+        r = requests.post(url, headers=headers, files=files, data=data, timeout=30)
+    except Exception as e:
+        return False, f"upload error: {e}"
+    try:
+        js = r.json()
+    except Exception:
+        js = {'text': r.text}
+    if 200 <= r.status_code < 300 and js.get('id'):
+        return True, js
+    return False, f"{r.status_code}: {js}"
+
+def send_whatsapp_document(to_phone: str, filename: str, content: bytes, caption: str = '') -> tuple[bool, str | dict]:
+    ok, res = _whatsapp_upload_media(filename, content, 'application/pdf')
+    if not ok:
+        return False, res  # error string
+    media_id = res.get('id') if isinstance(res, dict) else None
+    if not media_id:
+        return False, 'Failed to get media id from upload response'
+    token = os.getenv('WHATSAPP_TOKEN')
+    phone_id = os.getenv('WHATSAPP_PHONE_NUMBER_ID')
+    url = f"https://graph.facebook.com/v20.0/{phone_id}/messages"
+    headers = {
+        'Authorization': f'Bearer {token}',
+        'Content-Type': 'application/json'
+    }
+    payload = {
+        'messaging_product': 'whatsapp',
+        'to': to_phone,
+        'type': 'document',
+        'document': {
+            'id': media_id,
+            'filename': filename,
+            'caption': caption or 'Membership Card'
+        }
+    }
+    try:
+        r = requests.post(url, headers=headers, json=payload, timeout=30)
+    except Exception as e:
+        return False, f"request error: {e}"
+    ok = 200 <= r.status_code < 300
+    try:
+        data = r.json()
+    except Exception:
+        data = {'text': r.text}
+    return ok, (data if ok else f"{r.status_code}: {data}")
+
+def send_email(subject: str, body: str, to_email: str, attachments: list[tuple[str, bytes]]|None=None) -> tuple[bool, str]:
+    host = os.getenv('SMTP_HOST')
+    port = int(os.getenv('SMTP_PORT', '587'))
+    user = os.getenv('SMTP_USER')
+    pwd = os.getenv('SMTP_PASSWORD')
+    use_tls = os.getenv('SMTP_TLS', '1') not in ('0','false','False')
+    if not (host and user and pwd and to_email):
+        return False, 'SMTP config missing (host/user/password or recipient)'
+    msg = EmailMessage()
+    msg['Subject'] = subject
+    msg['From'] = user
+    msg['To'] = to_email
+    msg.set_content(body)
+    if attachments:
+        for filename, content in attachments:
+            msg.add_attachment(content, maintype='application', subtype='octet-stream', filename=filename)
+    try:
+        if use_tls:
+            with smtplib.SMTP(host, port, timeout=30) as s:
+                s.ehlo(); s.starttls(); s.ehlo(); s.login(user, pwd); s.send_message(msg)
+        else:
+            with smtplib.SMTP(host, port, timeout=30) as s:
+                s.login(user, pwd); s.send_message(msg)
+        return True, 'sent'
+    except Exception as e:
+        return False, str(e)
+
+def send_email_enhanced(subject: str, text_body: str, to_email: str, html_body: str|None=None, attachments: list[tuple[str, bytes]]|None=None) -> tuple[bool, str]:
+    """Extended email helper supporting optional HTML alternative.
+
+    Falls back to plain text if no HTML provided. Uses same SMTP env vars.
+    """
+    host = os.getenv('SMTP_HOST')
+    port = int(os.getenv('SMTP_PORT', '587'))
+    user = os.getenv('SMTP_USER')
+    pwd = os.getenv('SMTP_PASSWORD')
+    use_tls = os.getenv('SMTP_TLS', '1') not in ('0','false','False')
+    if not (host and user and pwd and to_email):
+        return False, 'SMTP config missing (host/user/password or recipient)'
+    msg = EmailMessage()
+    msg['Subject'] = subject
+    msg['From'] = user
+    msg['To'] = to_email
+    msg.set_content(text_body or '')
+    if html_body:
+        msg.add_alternative(html_body, subtype='html')
+    if attachments:
+        for filename, content in attachments:
+            msg.add_attachment(content, maintype='application', subtype='octet-stream', filename=filename)
+    try:
+        if use_tls:
+            with smtplib.SMTP(host, port, timeout=30) as s:
+                s.ehlo(); s.starttls(); s.ehlo(); s.login(user, pwd); s.send_message(msg)
+        else:
+            with smtplib.SMTP(host, port, timeout=30) as s:
+                s.login(user, pwd); s.send_message(msg)
+        return True, 'sent'
+    except Exception as e:
+        return False, str(e)
+
+@app.route('/admin/backup/email', methods=['POST'])
+@admin_required
+def email_backup():
+    # Build an in-memory zip with database and quick CSV exports
+    mem = BytesIO()
+    with zipfile.ZipFile(mem, mode='w', compression=zipfile.ZIP_DEFLATED) as z:
+        # include sqlite DB
+        try:
+            with open(db_path, 'rb') as f:
+                z.writestr('gym.db', f.read())
+        except Exception as e:
+            return jsonify({'ok': False, 'error': f'Failed reading DB: {e}'}), 500
+        # members.csv
+        members = Member.query.all()
+        rows = ['id,name,phone,admission_date']
+        for m in members:
+            rows.append(f"{m.id}," + f"{(m.name or '').replace(',', ' ')}," + f"{(m.phone or '').replace(',', ' ')}," + f"{m.admission_date.isoformat()}")
+        z.writestr('members.csv', '\n'.join(rows))
+        # payments.csv
+        pays = Payment.query.order_by(Payment.member_id, Payment.year, Payment.month).all()
+        rows = ['id,member_id,year,month,status,created_at']
+        for p in pays:
+            rows.append(f"{p.id},{p.member_id},{p.year},{p.month},{p.status},{p.created_at.isoformat()}")
+        z.writestr('payments.csv', '\n'.join(rows))
+        # payment_transactions.csv
+        txns = PaymentTransaction.query.order_by(PaymentTransaction.created_at).all()
+        rows = ['id,member_id,user_id,plan_type,year,month,amount,method,created_at']
+        for t in txns:
+            rows.append(f"{t.id},{t.member_id},{t.user_id},{t.plan_type},{t.year},{t.month or ''},{t.amount or ''},{t.method or ''},{t.created_at.isoformat()}")
+        z.writestr('payment_transactions.csv', '\n'.join(rows))
+        # audit_logs.csv (tamper-evident chain)
+        logs = AuditLog.query.order_by(AuditLog.id).all()
+        rows = ['id,created_at,action,data_json,prev_hash,hash']
+        for r in logs:
+            rows.append(f"{r.id},{r.created_at.isoformat()},{r.action},{r.data_json.replace(',', ';')},{r.prev_hash or ''},{r.hash}")
+        z.writestr('audit_logs.csv', '\n'.join(rows))
+    mem.seek(0)
+    ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+    to_email = os.getenv('BACKUP_TO_EMAIL') or request.args.get('to')
+    subject = f'Gym Backup {ts}'
+    body = 'Attached is the backup (DB and CSV exports).'
+    ok, resp = send_email(subject, body, to_email, attachments=[(f'backup_{ts}.zip', mem.read())])
+    if ok:
+        return jsonify({'ok': True, 'message': 'Backup sent'})
+    return jsonify({'ok': False, 'error': resp}), 502
+
+
+def _build_backup_zip_bytes() -> tuple[bool, bytes, str]:
+    mem = BytesIO()
+    with zipfile.ZipFile(mem, mode='w', compression=zipfile.ZIP_DEFLATED) as z:
+        try:
+            with open(db_path, 'rb') as f:
+                z.writestr('gym.db', f.read())
+        except Exception as e:
+            return False, b'', f'Failed reading DB: {e}'
+        members = Member.query.all()
+        rows = ['id,name,phone,admission_date']
+        for m in members:
+            rows.append(f"{m.id}," + f"{(m.name or '').replace(',', ' ')}," + f"{(m.phone or '').replace(',', ' ')}," + f"{m.admission_date.isoformat()}")
+        z.writestr('members.csv', '\n'.join(rows))
+        pays = Payment.query.order_by(Payment.member_id, Payment.year, Payment.month).all()
+        rows = ['id,member_id,year,month,status,created_at']
+        for p in pays:
+            rows.append(f"{p.id},{p.member_id},{p.year},{p.month},{p.status},{p.created_at.isoformat()}")
+        z.writestr('payments.csv', '\n'.join(rows))
+        txns = PaymentTransaction.query.order_by(PaymentTransaction.created_at).all()
+        rows = ['id,member_id,user_id,plan_type,year,month,amount,method,created_at']
+        for t in txns:
+            rows.append(f"{t.id},{t.member_id},{t.user_id},{t.plan_type},{t.year},{t.month or ''},{t.amount or ''},{t.method or ''},{t.created_at.isoformat()}")
+        z.writestr('payment_transactions.csv', '\n'.join(rows))
+        logs = AuditLog.query.order_by(AuditLog.id).all()
+        rows = ['id,created_at,action,data_json,prev_hash,hash']
+        for r in logs:
+            rows.append(f"{r.id},{r.created_at.isoformat()},{r.action},{r.data_json.replace(',', ';')},{r.prev_hash or ''},{r.hash}")
+        z.writestr('audit_logs.csv', '\n'.join(rows))
+    mem.seek(0)
+    ts = datetime.now().strftime('%Y%m%d_%H%M%S')
+    return True, mem.read(), ts
+
+
+def _save_backup_local(content: bytes, ts: str) -> tuple[bool, str]:
+    try:
+        fname = f"backup_{ts}.zip"
+        path = os.path.join(BACKUP_DIR, fname)
+        with open(path, 'wb') as f:
+            f.write(content)
+        return True, path
+    except Exception as e:
+        return False, str(e)
+
+
+def trigger_backup_on_login() -> None:
+    """Perform backup right after a successful login based on env config.
+
+    Env controls:
+      - AUTO_BACKUP_ON_LOGIN: enable when set to '1'/'true'
+      - AUTO_BACKUP_DEST: comma-separated 'local', 'email', 'drive' (default: 'local')
+    """
+    if os.getenv('AUTO_BACKUP_ON_LOGIN', '0') in ('0', 'false', 'False', ''):
+        return
+    ok, data, ts = _build_backup_zip_bytes()
+    if not ok:
+        append_audit('backup.auto_login.error', {'error': data})
+        return
+    dests = (os.getenv('AUTO_BACKUP_DEST', 'local') or 'local').lower().split(',')
+    results = {}
+    if 'local' in dests:
+        l_ok, l_path = _save_backup_local(data, ts)
+        results['local'] = {'ok': l_ok, 'path': l_path}
+    if 'email' in dests:
+        to_email = os.getenv('BACKUP_TO_EMAIL')
+        if to_email:
+            subject = f'Gym Backup {ts}'
+            body = 'Attached is the automatic login-time backup.'
+            e_ok, e_resp = send_email(subject, body, to_email, attachments=[(f'backup_{ts}.zip', data)])
+            results['email'] = {'ok': e_ok, 'response': e_resp}
+        else:
+            results['email'] = {'ok': False, 'error': 'BACKUP_TO_EMAIL not set'}
+    if 'drive' in dests:
+        d_ok, d_info = _upload_backup_to_gdrive(data, f'backup_{ts}.zip')
+        results['drive'] = {'ok': d_ok, 'info': d_info}
+    append_audit('backup.auto_login', {'results': results})
+
+
+def perform_automatic_backup() -> dict:
+    """Perform automatic backup and return results."""
+    ok, data, ts = _build_backup_zip_bytes()
+    if not ok:
+        return {'ok': False, 'error': data}
+    
+    # Always save locally
+    l_ok, l_path = _save_backup_local(data, ts)
+    
+    # Clean old backups (keep last 30)
+    cleanup_old_backups(keep_count=30)
+    
+    return {
+        'ok': l_ok,
+        'timestamp': ts,
+        'path': l_path,
+        'size': len(data)
+    }
+
+
+def cleanup_old_backups(keep_count: int = 30) -> None:
+    """Remove old backups, keeping only the most recent ones."""
+    try:
+        backups = []
+        for fname in os.listdir(BACKUP_DIR):
+            if fname.startswith('backup_') and fname.endswith('.zip'):
+                fpath = os.path.join(BACKUP_DIR, fname)
+                backups.append((os.path.getmtime(fpath), fpath))
+        
+        # Sort by modification time (oldest first)
+        backups.sort()
+        
+        # Remove old backups
+        if len(backups) > keep_count:
+            for _, fpath in backups[:-keep_count]:
+                try:
+                    os.remove(fpath)
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+
+def _upload_backup_to_gdrive(content: bytes, filename: str, mime: str = 'application/zip') -> tuple[bool, dict | str]:
+    if not HAVE_GDRIVE:
+        return False, 'Google Drive libraries not installed'
+    sa_file = os.getenv('GOOGLE_SERVICE_ACCOUNT_FILE')
+    folder_id = os.getenv('DRIVE_FOLDER_ID')
+    if not (sa_file and os.path.exists(sa_file)):
+        return False, 'GOOGLE_SERVICE_ACCOUNT_FILE not set or file missing'
+    if not folder_id:
+        return False, 'DRIVE_FOLDER_ID not set'
+    try:
+        creds = service_account.Credentials.from_service_account_file(sa_file, scopes=['https://www.googleapis.com/auth/drive.file'])
+        drive = build('drive', 'v3', credentials=creds)
+        media = MediaIoBaseUpload(BytesIO(content), mimetype=mime, resumable=False)
+        metadata = {'name': filename, 'parents': [folder_id]}
+        file = drive.files().create(body=metadata, media_body=media, fields='id,webViewLink,webContentLink').execute()
+        return True, file
+    except Exception as e:
+        return False, str(e)
+
+
+@app.route('/admin/backup/drive', methods=['POST'])
+@admin_required
+def drive_backup():
+    ok, data, ts = _build_backup_zip_bytes()
+    if not ok:
+        return jsonify({'ok': False, 'error': data}), 500
+    fname = f'backup_{ts}.zip'
+    ok, info = _upload_backup_to_gdrive(data, fname)
+    if ok:
+        return jsonify({'ok': True, 'file': info})
+    return jsonify({'ok': False, 'error': info}), 502
+
+@app.route('/admin/backup/download', methods=['GET'])
+@admin_required
+def download_backup():
+    ok, data, ts = _build_backup_zip_bytes()
+    if not ok:
+        return jsonify({'ok': False, 'error': data}), 500
+    return send_file(
+        BytesIO(data),
+        mimetype='application/zip',
+        as_attachment=True,
+        download_name=f"backup_{ts}.zip",
+    )
+
+
+@app.route('/admin/backup/create', methods=['POST'])
+@admin_required
+def create_backup():
+    """Manually trigger a backup."""
+    result = perform_automatic_backup()
+    if result['ok']:
+        append_audit('backup.manual', {'timestamp': result['timestamp']})
+        return jsonify(result)
+    return jsonify(result), 500
+
+
+@app.route('/admin/backup/list', methods=['GET'])
+@admin_required
+def list_backups():
+    """List all available backups."""
+    try:
+        backups = []
+        for fname in os.listdir(BACKUP_DIR):
+            if fname.startswith('backup_') and fname.endswith('.zip'):
+                fpath = os.path.join(BACKUP_DIR, fname)
+                stat = os.stat(fpath)
+                backups.append({
+                    'filename': fname,
+                    'size': stat.st_size,
+                    'created': datetime.fromtimestamp(stat.st_mtime).isoformat(),
+                    'timestamp': stat.st_mtime
+                })
+        
+        # Sort by timestamp (newest first)
+        backups.sort(key=lambda x: x['timestamp'], reverse=True)
+        
+        return jsonify({
+            'ok': True,
+            'backups': backups,
+            'total': len(backups),
+            'total_size': sum(b['size'] for b in backups)
+        })
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+@app.route('/admin/backup/restore/<filename>', methods=['POST'])
+@admin_required
+def restore_backup(filename):
+    """Restore from a specific backup file."""
+    try:
+        fpath = os.path.join(BACKUP_DIR, filename)
+        if not os.path.exists(fpath) or not filename.startswith('backup_'):
+            return jsonify({'ok': False, 'error': 'Invalid backup file'}), 404
+        
+        # Extract and restore database
+        with zipfile.ZipFile(fpath, 'r') as z:
+            if 'gym.db' in z.namelist():
+                # Backup current DB first
+                current_backup = db_path + '.before_restore'
+                if os.path.exists(db_path):
+                    import shutil
+                    shutil.copy2(db_path, current_backup)
+                
+                # Extract and replace
+                z.extract('gym.db', BASE_DIR)
+                
+                append_audit('backup.restored', {
+                    'filename': filename,
+                    'restored_at': datetime.now().isoformat()
+                })
+                
+                return jsonify({
+                    'ok': True,
+                    'message': 'Backup restored successfully',
+                    'note': 'Please restart the application to apply changes'
+                })
+            else:
+                return jsonify({'ok': False, 'error': 'Invalid backup format'}), 400
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+@app.route('/admin/backup/delete/<filename>', methods=['DELETE'])
+@admin_required
+def delete_backup(filename):
+    """Delete a specific backup file."""
+    try:
+        fpath = os.path.join(BACKUP_DIR, filename)
+        if not os.path.exists(fpath) or not filename.startswith('backup_'):
+            return jsonify({'ok': False, 'error': 'Invalid backup file'}), 404
+        
+        os.remove(fpath)
+        append_audit('backup.deleted', {'filename': filename})
+        
+        return jsonify({'ok': True, 'message': f'Backup {filename} deleted'})
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+
+@app.route('/admin/backup/download/<filename>', methods=['GET'])
+@admin_required
+def download_specific_backup(filename):
+    """Download a specific backup file."""
+    try:
+        fpath = os.path.join(BACKUP_DIR, filename)
+        if not os.path.exists(fpath) or not filename.startswith('backup_'):
+            return jsonify({'ok': False, 'error': 'Invalid backup file'}), 404
+        
+        return send_file(
+            fpath,
+            mimetype='application/zip',
+            as_attachment=True,
+            download_name=filename
+        )
+    except Exception as e:
+        return jsonify({'ok': False, 'error': str(e)}), 500
+
+@app.route('/api/members/<int:member_id>/remind', methods=['POST'])
 @login_required
-def delete_member(member_id):
-    m = Member.query.get_or_404(member_id)
-    # delete related payments
-    Payment.query.filter_by(member_id=member_id).delete()
-    # delete any stored photos
-    for e in ALLOWED_IMAGE_EXTS:
-        pth = os.path.join(UPLOAD_FOLDER, f"member_{member_id}{e}")
+def remind_member(member_id):
+    member = Member.query.get_or_404(member_id)
+    phone = _normalize_phone(member.phone or '')
+    if not phone:
+        return jsonify({'ok': False, 'error': 'Member has no phone number'}), 400
+    now = datetime.now()
+    price = (get_setting('monthly_price') or '8')
+    currency = (get_setting('currency_code') or 'USD')
+    gym = get_gym_name()
+    default_msg = f"Hi {member.name}, your {gym} fee ({price} {currency}) for {now.month}/{now.year} may be due. Please pay if pending."
+    data = request.get_json(silent=True) or {}
+    message = data.get('message') or default_msg
+    ok, resp = send_whatsapp_message(phone, message)
+    if ok:
+        return jsonify({'ok': True, 'response': resp})
+    return jsonify({'ok': False, 'error': resp}), 502
+
+
+@app.route('/admin/whatsapp/test', methods=['POST'])
+@admin_required
+def whatsapp_test():
+    data = request.get_json(silent=True) or {}
+    to = _normalize_phone((data.get('to') or '').strip())
+    msg = (data.get('message') or 'Test message from Gym Tracker').strip()
+    if not to:
+        return jsonify({'ok': False, 'error': 'Provide a valid phone number in international format'}), 400
+    ok, resp = send_whatsapp_message(to, msg)
+    if ok:
+        return jsonify({'ok': True, 'response': resp})
+    return jsonify({'ok': False, 'error': resp}), 502
+
+
+@app.route('/admin/whatsapp/status', methods=['GET'])
+def whatsapp_status():
+    token_present = bool(os.getenv('WHATSAPP_TOKEN'))
+    phone_id_present = bool(os.getenv('WHATSAPP_PHONE_NUMBER_ID'))
+    cc = (get_setting('whatsapp_default_country_code') or os.getenv('WHATSAPP_DEFAULT_COUNTRY_CODE') or '92')
+    missing = []
+    if not token_present:
+        missing.append('WHATSAPP_TOKEN')
+    if not phone_id_present:
+        missing.append('WHATSAPP_PHONE_NUMBER_ID')
+    return jsonify({
+        'ok': token_present and phone_id_present,
+        'missing': missing,
+        'default_country_code': cc
+    })
+
+
+@app.route('/api/admin/login-logs', methods=['GET'])
+@admin_required
+def admin_login_logs():
+    logs = [
+        {
+            'id': log.id,
+            'username': log.username,
+            'method': log.method,
+            'ip_address': log.ip_address,
+            'created_at': log.created_at.isoformat(),
+        }
+        for log in LoginLog.query.order_by(LoginLog.created_at.desc()).limit(100).all()
+    ]
+    return jsonify(logs)
+
+
+@app.route('/api/admin/staff', methods=['POST'])
+@admin_required
+def admin_add_staff():
+    data = request.get_json(silent=True) or {}
+    username = (data.get('username') or '').strip()
+    password = request.form.get('password') or ''
+    role = (data.get('role') or 'staff').strip().lower()
+    if not (username and password):
+        return jsonify({'ok': False, 'error': 'username and password required'}), 400
+    if User.query.filter_by(username=username).first():
+        return jsonify({'ok': False, 'error': 'username already exists'}), 400
+    if role not in ('staff', 'admin'):
+        role = 'staff'
+    user = User(username=username, password_hash=generate_password_hash(password), role=role)
+    db.session.add(user)
+    db.session.commit()
+    append_audit('admin.staff.create', {'user_id': user.id, 'role': role, 'created_by': session.get('user_id')})
+    return jsonify({'ok': True, 'user': {'id': user.id, 'username': user.username, 'role': user.role}})
+
+
+@app.route('/api/admin/permissions', methods=['GET', 'POST'])
+@admin_required
+def admin_permissions():
+    if request.method == 'POST':
+        data = request.get_json(silent=True) or {}
+        set_setting_json('staff_permissions', data.get('permissions') or [])
+        append_audit('admin.permissions.update', {'user_id': session.get('user_id')})
+        return jsonify({'ok': True})
+    return jsonify({'permissions': get_setting_json('staff_permissions', []) or []})
+
+@app.route('/admin/settings/gym-name', methods=['GET', 'POST'])
+@admin_required
+def gym_name_setting():
+    if request.method == 'POST':
+        data = request.get_json(silent=True) or {}
+        name = (data.get('gym_name') or '').strip()
+        if len(name) < 2:
+            return jsonify({'ok': False, 'error': 'gym_name too short'}), 400
+        set_setting('gym_name', name)
+        append_audit('setting.update.gym_name', {'user_id': session.get('user_id'), 'gym_name': name})
+        return jsonify({'ok': True, 'gym_name': name})
+    return jsonify({'ok': True, 'gym_name': get_gym_name()})
+
+# Public onboarding endpoints (enabled only until onboarding_done=="1")
+def _onboarding_needed() -> bool:
+    return (get_setting('onboarding_done', '0') != '1')  # type: ignore[name-defined]
+
+@app.route('/onboarding/status', methods=['GET'])
+def onboarding_status():
+    needed = _onboarding_needed()
+    settings = {
+        'gym_name': get_gym_name(),
+        'gym_purpose': get_setting('gym_purpose', '') if not needed else '',  # type: ignore[name-defined]
+        'currency_code': get_setting('currency_code', 'USD') if not needed else 'USD',
+        'monthly_price': get_setting('monthly_price', '8') if not needed else '8',
+        'features': get_setting_json('features', []) if not needed else [],
+        'logo': get_setting('logo_filename', '') if not needed else ''
+    }
+    return jsonify({'ok': True, 'needed': needed, 'settings': settings})
+
+@app.route('/onboarding/complete', methods=['POST'])
+def onboarding_complete():
+    if not _onboarding_needed():
+        return jsonify({'ok': False, 'error': 'Onboarding already completed'}), 403
+    data = request.get_json(silent=True) or {}
+    gym_name = (data.get('gym_name') or '').strip() or get_gym_name()
+    gym_purpose = (data.get('gym_purpose') or '').strip()
+    currency_code = (data.get('currency_code') or 'USD').upper()
+    monthly_price = str(data.get('monthly_price') or '8')
+    features = data.get('features') or []
+    skip = bool(data.get('skip'))
+    if not skip:
+        set_setting('gym_name', gym_name)  # type: ignore[name-defined]
+        set_setting('gym_purpose', gym_purpose)  # type: ignore[name-defined]
+        set_setting('currency_code', currency_code)  # type: ignore[name-defined]
+        set_setting('monthly_price', monthly_price)  # type: ignore[name-defined]
+        set_setting_json('features', features)
+    set_setting('onboarding_done', '1')  # type: ignore[name-defined]
+    append_audit('onboarding.complete', {'skip': skip, 'currency_code': currency_code, 'monthly_price': monthly_price})
+    return jsonify({'ok': True})
+
+@app.route('/onboarding/logo', methods=['POST'])
+def onboarding_logo():
+    if not _onboarding_needed():
+        return jsonify({'ok': False, 'error': 'Onboarding already completed'}), 403
+    if 'logo' not in request.files:
+        return jsonify({'ok': False, 'error': "Missing 'logo' file"}), 400
+    f = request.files['logo']
+    if not f or (f.filename or '').strip() == '':
+        return jsonify({'ok': False, 'error': 'Empty file'}), 400
+    ext = os.path.splitext(f.filename)[1].lower()
+    if ext not in ('.png', '.jpg', '.jpeg', '.webp'):
+        return jsonify({'ok': False, 'error': 'Only PNG/JPG/WEBP'}), 400
+    os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+    dest_rel = f"/static/uploads/logo{ext}"
+    dest_abs = os.path.join(UPLOAD_FOLDER, f"logo{ext}")
+    for e in ('.png', '.jpg', '.jpeg', '.webp'):
+        pth = os.path.join(UPLOAD_FOLDER, f"logo{e}")
         try:
             if os.path.exists(pth):
                 os.remove(pth)
         except Exception:
             pass
-    db.session.delete(m)
-    db.session.commit()
-    append_audit('member.delete', {'member_id': member_id})
-    return jsonify({"ok": True})
+    f.save(dest_abs)
+    set_setting('logo_filename', dest_rel)  # type: ignore[name-defined]
+    append_audit('onboarding.logo', {'path': dest_rel})
+    return jsonify({'ok': True, 'logo': dest_rel})
 
-# API: update member (name, phone, admission_date, plan_type, access_tier)
-# Duplicate removed: update_member
-# Duplicate removed: upload_member_photo
-@app.route('/api/members/<int:member_id>/payments', methods=['GET'])
-@login_required
-def get_payments(member_id):
-    payments = Payment.query.filter_by(member_id=member_id).order_by(Payment.year, Payment.month).all()
-    return jsonify([p.to_dict() for p in payments])
+@app.route('/admin/logo', methods=['POST'])
+@admin_required
+def admin_logo():
+    if 'logo' not in request.files:
+        return jsonify({'ok': False, 'error': "Missing 'logo' file"}), 400
+    f = request.files['logo']
+    if not f or (f.filename or '').strip() == '':
+        return jsonify({'ok': False, 'error': 'Empty file'}), 400
+    ext = os.path.splitext(f.filename)[1].lower()
+    if ext not in ('.png', '.jpg', '.jpeg', '.webp'):
+        return jsonify({'ok': False, 'error': 'Only PNG/JPG/WEBP'}), 400
+    os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+    dest_rel = f"/static/uploads/logo{ext}"
+    dest_abs = os.path.join(UPLOAD_FOLDER, f"logo{ext}")
+    for e in ('.png', '.jpg', '.jpeg', '.webp'):
+        pth = os.path.join(UPLOAD_FOLDER, f"logo{e}")
+        try:
+            if os.path.exists(pth):
+                os.remove(pth)
+        except Exception:
+            pass
+    f.save(dest_abs)
+    set_setting('logo_filename', dest_rel)  # type: ignore[name-defined]
+    append_audit('settings.logo', {'path': dest_rel, 'user_id': session.get('user_id')})
+    return jsonify({'ok': True, 'logo': dest_rel})
 
-# API: update payment (mark paid/unpaid)
-@app.route('/api/payments/<int:payment_id>', methods=['PUT'])
-@login_required
-def update_payment(payment_id):
-    p = Payment.query.get_or_404(payment_id)
-    data = request.json
-    status = data.get('status')
-    if status not in ('Paid','Unpaid','N/A'):
-        return jsonify({"error":"status must be Paid, Unpaid or N/A"}), 400
-    p.status = status
-    db.session.commit()
-    append_audit('payment.update', {'payment_id': payment_id, 'status': status, 'user_id': session.get('user_id')})
-    return jsonify(p.to_dict())
+@app.route('/admin/settings/general', methods=['POST'])
+@admin_required
+def admin_settings_general():
+    data = request.get_json(silent=True) or {}
+    if 'gym_name' in data:
+        set_setting('gym_name', (data.get('gym_name') or '').strip())  # type: ignore[name-defined]
+    if 'gym_purpose' in data:
+        set_setting('gym_purpose', (data.get('gym_purpose') or '').strip())  # type: ignore[name-defined]
+    if 'currency_code' in data:
+        set_setting('currency_code', (data.get('currency_code') or 'USD').upper())  # type: ignore[name-defined]
+    if 'monthly_price' in data:
+        set_setting('monthly_price', str(data.get('monthly_price') or '8'))  # type: ignore[name-defined]
+    if 'features' in data:
+        set_setting_json('features', data.get('features') or [])
+    if 'whatsapp_default_country_code' in data:
+        code = str(data.get('whatsapp_default_country_code') or '').lstrip('+')
+        set_setting('whatsapp_default_country_code', code or '92')  # type: ignore[name-defined]
+    append_audit('settings.general', {'user_id': session.get('user_id')})
+    return jsonify({'ok': True})
 
-# Export member payments to excel
-@app.route('/api/members/<int:member_id>/export', methods=['GET'])
-@login_required
-def export_member(member_id):
-    member = Member.query.get_or_404(member_id)
-    payments = Payment.query.filter_by(member_id=member_id).order_by(Payment.year, Payment.month).all()
-    rows = []
-    for p in payments:
-        rows.append({"Year": p.year, "Month": p.month, "Status": p.status})
-    df = pd.DataFrame(rows)
-    out_path = os.path.join(BASE_DIR, f"member_{member_id}_payments.xlsx")
-    df.to_excel(out_path, index=False)
-    return send_file(out_path, as_attachment=True)
-
-# Export all members data to excel
-@app.route('/api/members/export/all', methods=['GET'])
-@login_required
-def export_all_members():
-    try:
-        members = Member.query.all()
-        rows = []
-        for m in members:
-            payments = Payment.query.filter_by(member_id=m.id).order_by(Payment.year, Payment.month).all()
-            total_paid = sum(1 for p in payments if p.status == 'Paid')
-            total_unpaid = sum(1 for p in payments if p.status == 'Unpaid')
-            
-            rows.append({
-                'Member ID': m.id,
-                'Name': m.name,
-                'Phone': m.phone or '',
-                'Email': m.email or '',
-                'CNIC': m.cnic or '',
-                'Address': m.address or '',
-                'Gender': m.gender or '',
-                'DOB': m.dob.strftime('%Y-%m-%d') if m.dob else '',
-                'Admission Date': m.admission_date.strftime('%Y-%m-%d'),
-                'Monthly Fee': m.monthly_price or 0,
-                'Referred By': m.referred_by or '',
-                'Status': 'Active' if m.is_active else 'Inactive',
-                'Notes': m.notes or '',
-                'Total Paid Months': total_paid,
-                'Total Unpaid Months': total_unpaid,
-                'Created': m.created.strftime('%Y-%m-%d %H:%M:%S') if m.created else ''
-            })
-        
-        df = pd.DataFrame(rows)
-        out_path = os.path.join(BASE_DIR, 'all_members_export.xlsx')
-        df.to_excel(out_path, index=False)
-        return send_file(out_path, as_attachment=True, download_name=f'all_members_{datetime.now().strftime("%Y%m%d")}.xlsx')
-    except Exception as e:
-        return jsonify({'ok': False, 'error': str(e)}), 500
-
-# Audit Trail API
-@app.route('/api/audit/logs', methods=['GET'])
-@login_required
-def get_audit_logs():
-    try:
-        limit = int(request.args.get('limit', 100))
-        offset = int(request.args.get('offset', 0))
-        action_filter = request.args.get('action', '').strip()
-        
-        query = AuditLog.query.order_by(AuditLog.created_at.desc())
-        
-        if action_filter:
-            query = query.filter(AuditLog.action.contains(action_filter))
-        
-        total = query.count()
-        logs = query.limit(limit).offset(offset).all()
-        
-        rows = []
-        for log in logs:
-            try:
-                data = json.loads(log.data_json) if log.data_json else {}
-            except Exception:
-                data = {}
-            
-            rows.append({
-                'id': log.id,
-                'timestamp': log.created_at.isoformat(),
-                'action': log.action,
-                'data': data,
-                'hash': log.hash[:16] if log.hash else '',  # Show first 16 chars of hash
-            })
-        
+@app.route('/admin/settings/reminders', methods=['GET', 'POST'])
+@admin_required
+def admin_settings_reminders():
+    if request.method == 'GET':
+        enabled = get_setting('reminder_enabled') or '0'
+        hour = get_setting('reminder_hour') or '9'
+        minute = get_setting('reminder_minute') or '0'
         return jsonify({
             'ok': True,
-            'logs': rows,
-            'total': total,
-            'limit': limit,
-            'offset': offset
+            'enabled': enabled in ('1', 'true', 'True'),
+            'hour': int(hour),
+            'minute': int(minute)
         })
-    except Exception as e:
-        return jsonify({'ok': False, 'error': str(e)}), 500
+    data = request.get_json(silent=True) or {}
+    if 'enabled' in data:
+        set_setting('reminder_enabled', '1' if data.get('enabled') else '0')
+    if 'hour' in data:
+        set_setting('reminder_hour', str(int(data.get('hour', 9))))
+    if 'minute' in data:
+        set_setting('reminder_minute', str(int(data.get('minute', 0))))
+    append_audit('settings.reminders', {'user_id': session.get('user_id')})
+    return jsonify({'ok': True, 'message': 'Reminder settings saved. Restart server to apply schedule.'})
 
-# Referral Statistics API
-@app.route('/api/referral/stats', methods=['GET'])
+@app.route('/admin/audit/verify', methods=['GET'])
+@admin_required
+def audit_verify():
+    prev_hash = None
+    ok = True
+    broken_at = None
+    for rec in AuditLog.query.order_by(AuditLog.id.asc()).all():
+        digest = _audit_hash(prev_hash, rec.created_at.isoformat(), rec.action, rec.data_json)
+        if digest != rec.hash or rec.prev_hash != prev_hash:
+            ok = False
+            broken_at = rec.id
+            break
+        prev_hash = rec.hash
+    return jsonify({'ok': ok, 'broken_at': broken_at})
+
+@app.route('/r/<code>', methods=['GET', 'POST'])
+def referral_register(code):
+    ref = Member.query.filter_by(referral_code=code).first()
+    if not ref:
+        return render_template('referral_register.html', error='Invalid referral link', gym_name=get_gym_name())
+    if request.method == 'POST':
+        name = (request.form.get('name') or '').strip()
+        phone = (request.form.get('phone') or '').strip()
+        admission = (request.form.get('admission_date') or '').strip()
+        plan_type = (request.form.get('plan_type') or 'monthly').lower()
+        if not (name and admission):
+            return render_template('referral_register.html', error='Name and admission date required', referrer=ref, gym_name=get_gym_name())
+        try:
+            admission_date = datetime.fromisoformat(admission).date()
+        except Exception:
+            return render_template('referral_register.html', error='Invalid date', referrer=ref, gym_name=get_gym_name())
+        if plan_type not in ('monthly','yearly'):
+            plan_type = 'monthly'
+        m = Member(name=name, phone=phone, admission_date=admission_date, plan_type=plan_type, referral_code=_gen_referral_code(), referred_by=ref.id, access_tier='unlimited')
+        db.session.add(m)
+        db.session.commit()
+        for mm in range(1, 13):
+            status = "N/A" if datetime(admission_date.year, mm, 1).date() < admission_date else "Unpaid"
+            db.session.add(Payment(member_id=m.id, year=admission_date.year, month=mm, status=status))
+        db.session.commit()
+        append_audit('member.create.referral', {'member_id': m.id, 'referred_by': ref.id})
+        return render_template('referral_register.html', success=True, referrer=ref, gym_name=get_gym_name())
+    return render_template('referral_register.html', referrer=ref, gym_name=get_gym_name())
+
+# Member card: download as PDF
+@app.route('/api/members/<int:member_id>/card', methods=['GET'])
 @login_required
-def get_referral_stats():
-    try:
-        # Get all members with referral info
-        members = Member.query.all()
-        
-        # Group by referrer
-        referral_map = {}
-        total_referred = 0
-        
-        for member in members:
-            if member.referred_by and member.referred_by.strip():
-                referrer = member.referred_by.strip()
-                if referrer not in referral_map:
-                    referral_map[referrer] = {
-                        'total': 0,
-                        'active': 0,
-                        'total_fees': 0.0
-                    }
-                referral_map[referrer]['total'] += 1
-                if member.is_active:
-                    referral_map[referrer]['active'] += 1
-                # Calculate total fees from this referred member
-                paid_months = Payment.query.filter_by(member_id=member.id, status='Paid').count()
-                referral_map[referrer]['total_fees'] += paid_months * (member.monthly_price or 0)
-                total_referred += 1
-        
-        # Build response
-        rows = []
-        for referrer, stats in sorted(referral_map.items(), key=lambda x: x[1]['total'], reverse=True):
-            rows.append({
-                'referrer': referrer,
-                'total_referred': stats['total'],
-                'active_members': stats['active'],
-                'total_fees_collected': round(stats['total_fees'], 2)
-            })
-        
-        # Find top referrer
-        top_referrer = None
-        top_count = 0
-        if rows:
-            top_referrer = rows[0]['referrer']
-            top_count = rows[0]['total_referred']
-        
+def member_card_download(member_id):
+    m = Member.query.get_or_404(member_id)
+    ok, pdf_bytes, fname = _build_member_card_pdf_bytes(m)
+    if not ok:
+        return jsonify({'ok': False, 'error': fname or 'Failed to build PDF'}), 500
+    return send_file(BytesIO(pdf_bytes), mimetype='application/pdf', as_attachment=True, download_name=fname)
+
+# Member card: send via email and/or WhatsApp
+@app.route('/api/members/<int:member_id>/card/send', methods=['POST'])
+@login_required
+def member_card_send(member_id):
+    m = Member.query.get_or_404(member_id)
+    payload = request.get_json(silent=True) or {}
+    email_to = (payload.get('email') or '').strip()
+    whatsapp_to = _normalize_phone((payload.get('whatsapp') or '').strip())
+    if not email_to and not whatsapp_to:
+        return jsonify({'ok': False, 'error': 'Provide email and/or whatsapp'}), 400
+    ok, pdf_bytes, fname = _build_member_card_pdf_bytes(m)
+    if not ok:
+        return jsonify({'ok': False, 'error': fname or 'Failed to build PDF'}), 500
+    results = {}
+    # Email
+    if email_to:
+        subj = f"Membership Card - {m.name} (#" + str(1000 + (m.id or 0)) + ")"
+        body = f"Attached is the membership card for {m.name}."
+        e_ok, e_resp = send_email(subj, body, email_to, attachments=[(fname, pdf_bytes)])
+        results['email'] = {'ok': e_ok, 'response': e_resp}
+    # WhatsApp
+    if whatsapp_to:
+        caption = f"{m.name} - ZAIDAN FITNESS CARD"
+        w_ok, w_resp = send_whatsapp_document(whatsapp_to, fname, pdf_bytes, caption)
+        results['whatsapp'] = {'ok': w_ok, 'response': w_resp}
+    overall_ok = all(v.get('ok') for v in results.values()) if results else False
+    status = 200 if overall_ok else 207  # multi-status style
+    return jsonify({'ok': overall_ok, 'results': results}), status
+
+# API: list payment transactions for a member
+@app.route('/api/members/<int:member_id>/transactions', methods=['GET'])
+@login_required
+def member_transactions(member_id):
+    _ = Member.query.get_or_404(member_id)
+    txns = PaymentTransaction.query.filter_by(member_id=member_id).order_by(PaymentTransaction.created_at.desc()).all()
+    out = []
+    for t in txns:
+        out.append({
+            'id': t.id,
+            'member_id': t.member_id,
+            'user_id': t.user_id,
+            'plan_type': t.plan_type,
+            'year': t.year,
+            'month': t.month,
+            'amount': t.amount,
+            'method': t.method,
+            'created_at': t.created_at.isoformat(),
+        })
+    return jsonify(out)
+
+# ADMIN: Complete System Reset
+@app.route('/admin/system/reset', methods=['POST'])
+@admin_required
+def system_reset():
+    """Complete system reset: clears all data, resets to factory defaults.
+    
+    WARNING: This will delete:
+    - All members and their payment records
+    - All users (except default admin)
+    - All payment transactions
+    - All audit logs
+    - All products and sales (POS data)
+    - All uploaded files and member photos
+    - All settings (reset to defaults)
+    
+    Requires admin authentication.
+    """
+    data = request.get_json(silent=True) or {}
+    confirm = (data.get('confirm') or '').strip().upper()
+    
+    if confirm != 'RESET':
         return jsonify({
-            'ok': True,
-            'total_referrers': len(referral_map),
-            'total_referred': total_referred,
-            'top_referrer': top_referrer,
-            'top_referrer_count': top_count,
-            'referrals': rows
-        })
-    except Exception as e:
-        return jsonify({'ok': False, 'error': str(e)}), 500
-
-# Attendance Recording API
-@app.route('/api/attendance/record', methods=['POST'])
-@login_required
-def record_attendance():
+            'ok': False, 
+            'error': 'Confirmation required. Send {"confirm": "RESET"} to proceed.'
+        }), 400
+    
     try:
-        data = request.get_json() or {}
-        member_id = int(data.get('member_id') or 0)
-        attendance_type = (data.get('type') or '').strip()
+        # 1. Delete all database records
+        db.session.query(SaleItem).delete()
+        db.session.query(Sale).delete()
+        db.session.query(Product).delete()
+        db.session.query(PaymentTransaction).delete()
+        db.session.query(Payment).delete()
+        db.session.query(Member).delete()
+        db.session.query(AuditLog).delete()
+        db.session.query(UploadedFile).delete()
+        db.session.query(LoginLog).delete()
+        db.session.query(OAuthAccount).delete()
+        db.session.query(Setting).delete()
         
-        if not member_id or attendance_type not in ('check-in', 'check-out'):
-            return jsonify({'ok': False, 'error': 'member_id and type (check-in/check-out) required'}), 400
+        # 2. Delete all users except recreate admin
+        db.session.query(User).delete()
         
-        member = Member.query.get_or_404(member_id)
+        # 3. Commit deletions
+        db.session.commit()
         
-        # Record attendance
-        check_in_time = None
-        if attendance_type == 'check-in':
-            check_in_time = datetime.utcnow()
-        
-        attendance = Attendance(
-            member_id=member_id,
-            check_in=check_in_time or datetime.utcnow(),
-            check_out=None if attendance_type == 'check-in' else datetime.utcnow()
+        # 4. Recreate default admin user
+        admin_username = os.getenv('ADMIN_USERNAME', 'admin')
+        admin_password = os.getenv('ADMIN_PASSWORD', 'admin123')
+        admin_user = User(
+            username=admin_username, 
+            password_hash=generate_password_hash(admin_password), 
+            role='admin'
         )
-        db.session.add(attendance)
+        db.session.add(admin_user)
+        
+        # 5. Reset core settings to defaults
+        set_setting('gym_name', 'ZAIDAN FITNESS RECORD')
+        set_setting('currency_code', 'USD')
+        set_setting('monthly_price', '8')
+        set_setting('whatsapp_default_country_code', '92')
+        set_setting('onboarding_done', '0')
+        
         db.session.commit()
         
-        # Log attendance
-        append_audit('attendance.record', {
-            'member_id': member_id,
-            'type': attendance_type,
-            'timestamp': datetime.utcnow().isoformat(),
-            'user_id': session.get('user_id')
+        # 6. Delete all uploaded files from filesystem
+        try:
+            for filename in os.listdir(UPLOAD_FOLDER):
+                filepath = os.path.join(UPLOAD_FOLDER, filename)
+                if os.path.isfile(filepath):
+                    os.remove(filepath)
+        except Exception:
+            pass
+        
+        # 7. Delete all backup files
+        try:
+            for filename in os.listdir(BACKUP_DIR):
+                filepath = os.path.join(BACKUP_DIR, filename)
+                if os.path.isfile(filepath):
+                    os.remove(filepath)
+        except Exception:
+            pass
+        
+        # 8. Delete all data uploads
+        try:
+            data_uploads_dir = os.path.join(BASE_DIR, 'data_uploads')
+            if os.path.exists(data_uploads_dir):
+                for filename in os.listdir(data_uploads_dir):
+                    filepath = os.path.join(data_uploads_dir, filename)
+                    if os.path.isfile(filepath):
+                        os.remove(filepath)
+        except Exception:
+            pass
+        
+        # 9. Log out current session
+        session.clear()
+        
+        # 10. Log the reset event (new audit chain starts)
+        append_audit('system.reset', {
+            'performed_by': 'admin',
+            'timestamp': datetime.now(timezone.utc).isoformat(),
+            'note': 'Complete system reset - all data cleared'
         })
         
         return jsonify({
             'ok': True,
-            'message': f'{attendance_type} recorded',
-            'timestamp': datetime.utcnow().isoformat()
+            'message': 'System reset completed successfully',
+            'details': {
+                'database': 'All tables cleared',
+                'users': f'Reset to default admin ({admin_username})',
+                'files': 'All uploads deleted',
+                'settings': 'Reset to defaults',
+                'session': 'Logged out'
+            },
+            'next_steps': [
+                'Login with default credentials',
+                'Complete onboarding setup',
+                'Add new members and configure settings'
+            ]
         })
+        
     except Exception as e:
-        return jsonify({'ok': False, 'error': str(e)}), 500
+        db.session.rollback()
+        return jsonify({
+            'ok': False,
+            'error': f'Reset failed: {str(e)}'
+        }), 500
 
-def ensure_payment_rows(member: Member, year: int):
-    # Create payment rows for a year if missing
-    existing = {(p.month) for p in Payment.query.filter_by(member_id=member.id, year=year).all()}
-    for m in range(1, 13):
-        if m in existing:
-            continue
-        status = 'Unpaid'
-        if year == member.admission_date.year:
-            first_day = datetime(year, m, 1).date()
-            status = 'N/A' if first_day < member.admission_date else 'Unpaid'
-        p = Payment(member_id=member.id, year=year, month=m, status=status)
-        db.session.add(p)
-    db.session.commit()
-
-# Removed dangling decorators block from lines 2162-2196
-
-@app.route('/api/fees/mark-unpaid', methods=['POST'])
+@app.route('/dashboard/excel')
 @login_required
-def api_fees_mark_unpaid():
-    try:
-        data = request.get_json() or {}
-        member_id = int(data.get('member_id') or 0)
-        year = int(data.get('year') or 0)
-        month = int(data.get('month') or 0)
-        if not member_id or not year or not month:
-            return jsonify({'ok': False, 'error': 'member_id, year, month required'}), 400
+def excel_dashboard():
+    """Excel-based auto-updating dashboard"""
+    return render_template('excel_dashboard.html', gym_name=get_gym_name())
 
-        p = Payment.query.filter_by(member_id=member_id, year=year, month=month).first()
-        if not p:
-            # Create row if missing, default to Unpaid
-            p = Payment(member_id=member_id, year=year, month=month, status='Unpaid')
-            db.session.add(p)
-        else:
-            p.status = 'Unpaid'
-        db.session.commit()
-        return jsonify({'ok': True})
+@app.route('/api/excel/data')
+@login_required
+def excel_data_endpoint():
+    """API endpoint for Excel data with auto-update support"""
+    EXCEL_FILE_PATH = os.path.join(BASE_DIR, 'data_file.xlsx')
+    
+    if not os.path.exists(EXCEL_FILE_PATH):
+        # Return sample data if file doesn't exist
+        return jsonify([{'Category': 'No Data', 'Value': 0}])
+    
+    try:
+        df = pd.read_excel(EXCEL_FILE_PATH)
+        # Convert to JSON format
+        data = df.to_dict(orient='records')
+        return jsonify(data)
     except Exception as e:
-        return jsonify({'ok': False, 'error': str(e)}), 500
+        return jsonify({'error': str(e)}), 500
+
+# Initialize automatic backup scheduler
+def init_backup_scheduler():
+    """Initialize automatic backup scheduler if enabled."""
+    if not HAVE_APSCHEDULER:
+        return
+    
+    # Check if automatic backups are enabled
+    auto_backup_enabled = os.getenv('AUTO_BACKUP_ENABLED', '1') in ('1', 'true', 'True')
+    if not auto_backup_enabled:
+        return
+    
+    # Get backup interval (default: every 6 hours)
+    backup_interval = int(os.getenv('BACKUP_INTERVAL_HOURS', '6'))
+    
+    def backup_job():
+        """Wrapper function to run backup within app context"""
+        with app.app_context():
+            perform_automatic_backup()
+    
+    try:
+        scheduler = BackgroundScheduler()
+        scheduler.add_job(
+            func=backup_job,
+            trigger='interval',
+            hours=backup_interval,
+            id='automatic_backup',
+            name='Automatic Gym Backup',
+            replace_existing=True
+        )
+        scheduler.start()
+        
+        # Perform initial backup on startup (within app context)
+        with app.app_context():
+            result = perform_automatic_backup()
+            if result.get('ok'):
+                print(f"✓ Initial backup created: {result.get('path')}")
+        
+        print(f"✓ Automatic backup scheduler started (every {backup_interval} hours)")
+        print(f"✓ Backups saved to: {BACKUP_DIR}")
+    except Exception as e:
+        print(f"Warning: Could not start backup scheduler: {e}")
+
 
 if __name__ == '__main__':
-    with app.app_context():
-        db.create_all()
-    debug_mode = os.getenv('FLASK_DEBUG', '0') == '1'
-    app.run(debug=debug_mode, host='0.0.0.0', port=5000)
+    # Initialize backup scheduler
+    init_backup_scheduler()
+    
+    print("="*60)
+    print("GYM MANAGEMENT SYSTEM - STARTING")
+    print("="*60)
+    print(f"Database: {db_path}")
+    print(f"Backups: {BACKUP_DIR}")
+    print(f"Server: http://0.0.0.0:5000")
+    print("="*60)
+    
+    app.run(host='0.0.0.0', port=5000, debug=True)
