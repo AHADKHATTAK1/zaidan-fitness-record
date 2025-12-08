@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+
+{% block title %}Settings - {{ gym_name }}{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="glass-panel p-4">
+            <h4 class="fw-bold mb-4">System Settings</h4>
+
+            <form method="post">
+                <div class="mb-3">
+                    <label class="form-label text-muted">Gym Name</label>
+                    <input type="text" name="gym_name" class="form-control form-control-dark"
+                        value="{{ settings.gym_name }}">
+                </div>
+
+                <div class="row g-3 mb-4">
+                    <div class="col-md-6">
+                        <label class="form-label text-muted">Currency Code</label>
+                        <input type="text" name="currency_code" class="form-control form-control-dark"
+                            value="{{ settings.currency_code }}">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label text-muted">Default Monthly Price</label>
+                        <input type="number" name="monthly_price" class="form-control form-control-dark"
+                            value="{{ settings.monthly_price }}">
+                    </div>
+                </div>
+
+                <hr class="border-secondary opacity-25">
+
+                <div class="d-flex justify-content-end">
+                    <button type="submit" class="btn btn-primary-glow">Save Changes</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

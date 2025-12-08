@@ -998,6 +998,7 @@ def dashboard():
     paid_count = Payment.query.filter_by(year=now.year, month=now.month, status='Paid').count()
     unpaid_count = Payment.query.filter_by(year=now.year, month=now.month, status='Unpaid').count()
     na_count = Payment.query.filter_by(year=now.year, month=now.month, status='N/A').count()
+    recent_activity = AuditLog.query.order_by(AuditLog.created_at.desc()).limit(5).all()
     recent_members = Member.query.order_by(Member.id.desc()).limit(5).all()
     currency_code = get_setting('currency_code') or 'USD'
     monthly_price = get_setting('monthly_price') or '8'
@@ -1020,6 +1021,7 @@ def dashboard():
         unpaid_count=unpaid_count,
         na_count=na_count,
         recent_members=recent_members,
+        recent_activity=recent_activity,
         username=session.get('username'),
         gym_name=get_gym_name(),
         currency_code=currency_code,
@@ -1124,7 +1126,7 @@ def index():
     monthly_price = get_setting('monthly_price') or '8'
     logo_url = get_setting('logo_filename') or ''
     default_cc = get_setting('whatsapp_default_country_code') or '92'
-    return render_template('index.html', members=members, gym_name=get_gym_name(), currency_code=currency_code, monthly_price=monthly_price, logo_url=logo_url, default_cc=default_cc)
+    return render_template('members.html', members=members, gym_name=get_gym_name(), currency_code=currency_code, monthly_price=monthly_price, logo_url=logo_url, default_cc=default_cc)
 
 # API: add member
 @app.route('/api/members', methods=['POST'])

@@ -1,0 +1,173 @@
+{% extends "base.html" %}
+
+{% block title %}POS - {{ gym_name }}{% endblock %}
+
+{% block content %}
+<div class="row h-100 flex-column-reverse flex-md-row">
+    <!-- Product Selection -->
+    <div class="col-md-8 d-flex flex-column h-100">
+        <div class="glass-panel p-3 mb-3">
+            <input type="text" id="searchPos" class="form-control form-control-dark" placeholder="Search products..."
+                onkeyup="filterPosProducts()">
+        </div>
+
+        <div class="row g-3 overflow-auto" id="posGrid" style="max-height: calc(100vh - 250px);">
+            <!-- Products injected here -->
+        </div>
+    </div>
+
+    <!-- Cart -->
+    <div class="col-md-4 mb-3 mb-md-0">
+        <div class="glass-panel h-100 d-flex flex-column p-0">
+            <div class="p-3 border-bottom border-secondary d-flex justify-content-between align-items-center">
+                <h5 class="mb-0 fw-bold">Current Sale</h5>
+                <span class="badge bg-primary rounded-pill d-md-none" id="mobileCartCount">0</span>
+            </div>
+
+            <div class="flex-grow-1 overflow-auto p-3" id="cartItems" style="max-height: 300px; min-height: 150px;">
+                <div class="text-center text-muted mt-5">Cart is empty</div>
+            </div>
+
+            <div class="p-3 border-top border-secondary bg-dark bg-opacity-25">
+                <div class="d-flex justify-content-between mb-2">
+                    <span class="text-muted">Subtotal</span>
+                    <span class="fw-bold" id="cartSubtotal">0.00</span>
+                </div>
+                <div class="d-flex justify-content-between mb-3">
+                    <span class="text-muted">Total</span>
+                    <span class="fw-bold fs-4 text-primary" id="cartTotal">0.00</span>
+                </div>
+
+                <div class="mb-3">
+                    <input type="text" id="customerName" class="form-control form-control-dark form-control-sm"
+                        placeholder="Customer Name (Optional)">
+                </div>
+
+                <button class="btn btn-primary-glow w-100 py-2" onclick="checkout()">
+                    Checkout <i class="bi bi-arrow-right"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let allProducts = [];
+    let cart = [];
+
+    async function loadPosProducts() {
+        const res = await fetch('/api/products');
+        allProducts = await res.json();
+        renderPosProducts(allProducts);
+    }
+
+    function renderPosProducts(list) {
+        const grid = document.getElementById('posGrid');
+        grid.innerHTML = list.map(p => `
+        <div class="col-6 col-md-4 col-lg-3">
+            <div class="glass-card p-3 h-100 cursor-pointer" onclick="addToCart(${p.id})">
+                <div class="fw-bold text-truncate">${p.name}</div>
+                <div class="text-primary fw-bold mt-1">${p.price}</div>
+                <div class="small text-muted">Stock: ${p.stock}</div>
+            </div>
+        </div>
+    `).join('');
+    }
+
+    function filterPosProducts() {
+        const q = document.getElementById('searchPos').value.toLowerCase();
+        const filtered = allProducts.filter(p => p.name.toLowerCase().includes(q));
+        renderPosProducts(filtered);
+    }
+
+    function addToCart(id) {
+        const p = allProducts.find(x => x.id === id);
+        if (!p || p.stock <= 0) return;
+
+        const existing = cart.find(x => x.product_id === id);
+        if (existing) {
+            if (existing.quantity < p.stock) existing.quantity++;
+        } else {
+            cart.push({ product_id: id, name: p.name, price: p.price, quantity: 1, max: p.stock });
+        }
+        renderCart();
+    }
+
+    function renderCart() {
+        const container = document.getElementById('cartItems');
+        const mobileCount = document.getElementById('mobileCartCount');
+
+        mobileCount.textContent = cart.reduce((a, b) => a + b.quantity, 0);
+
+        if (cart.length === 0) {
+            container.innerHTML = '<div class="text-center text-muted mt-5">Cart is empty</div>';
+            document.getElementById('cartSubtotal').textContent = '0.00';
+            document.getElementById('cartTotal').textContent = '0.00';
+            return;
+        }
+
+        let total = 0;
+        container.innerHTML = cart.map((item, idx) => {
+            const lineTotal = item.price * item.quantity;
+            total += lineTotal;
+            return `
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <div>
+                    <div class="fw-bold text-truncate" style="max-width: 120px;">${item.name}</div>
+                    <div class="small text-muted">${item.price} x ${item.quantity}</div>
+                </div>
+                <div class="d-flex align-items-center gap-2">
+                    <span class="fw-bold">${lineTotal.toFixed(2)}</span>
+                    <button class="btn btn-sm btn-outline-danger py-0 px-1" onclick="removeFromCart(${idx})">&times;</button>
+                </div>
+            </div>
+        `;
+        }).join('');
+
+        document.getElementById('cartSubtotal').textContent = total.toFixed(2);
+        document.getElementById('cartTotal').textContent = total.toFixed(2);
+    }
+
+    function removeFromCart(idx) {
+        cart.splice(idx, 1);
+        renderCart();
+    }
+
+    async function checkout() {
+        if (cart.length === 0) return;
+
+        const customer = document.getElementById('customerName').value;
+        const payload = {
+            items: cart,
+            customer_name: customer,
+            payment_method: 'cash'
+        };
+
+        try {
+            const res = await fetch('/api/pos/checkout', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+
+            if (res.ok) {
+                alert('Sale Completed! Invoice: ' + data.invoice_number);
+                cart = [];
+                renderCart();
+                loadPosProducts(); // Refresh stock
+                document.getElementById('customerName').value = '';
+            } else {
+                alert('Error: ' + data.error);
+            }
+        } catch (e) {
+            alert('Checkout failed');
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', loadPosProducts);
+</script>
+{% endblock %}

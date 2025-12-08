@@ -1,0 +1,666 @@
+{% extends "base.html" %}
+
+{% block title %}Members - {{ gym_name }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2 class="fw-bold mb-0">Members</h2>
+    <button class="btn btn-primary-glow" data-bs-toggle="modal" data-bs-target="#addMemberModal">
+        <i class="bi bi-person-plus-fill me-2"></i> Add Member
+    </button>
+</div>
+
+<!-- Filters -->
+<div class="glass-panel p-3 mb-4">
+    <div class="row g-3">
+        <div class="col-md-4">
+            <div class="input-group">
+                <span class="input-group-text bg-transparent border-secondary text-muted"><i
+                        class="bi bi-search"></i></span>
+                <input type="text" id="search" class="form-control form-control-dark border-start-0"
+                    placeholder="Search by name, phone or ID..." onkeyup="debouncedFetchMembers()">
+            </div>
+        </div>
+        <div class="col-md-2">
+            <select id="filterStatus" class="form-select form-control-dark" onchange="debouncedFetchMembers()">
+                <option value="">All Status</option>
+                <option value="Paid">Paid</option>
+                <option value="Unpaid">Unpaid</option>
+                <option value="N/A">N/A</option>
+            </select>
+        </div>
+        <div class="col-md-2">
+            <select id="filterActive" class="form-select form-control-dark" onchange="debouncedFetchMembers()">
+                <option value="">All Members</option>
+                <option value="1">Active</option>
+                <option value="0">Inactive</option>
+            </select>
+        </div>
+        <div class="col-md-2">
+            <select id="filterTraining" class="form-select form-control-dark" onchange="debouncedFetchMembers()">
+                <option value="">All Training</option>
+                <option value="standard">Gym</option>
+                <option value="personal">Personal</option>
+                <option value="cardio">Cardio</option>
+                <option value="other">Custom</option>
+            </select>
+        </div>
+        <div class="col-md-2">
+            <button class="btn btn-outline-secondary w-100" onclick="debouncedFetchMembers()">Apply Filters</button>
+        </div>
+    </div>
+</div>
+
+<!-- Bulk Toolbar -->
+<div id="bulkToolbar" class="glass-panel p-2 mb-3 d-none bg-primary bg-opacity-10 border-primary">
+    <div class="d-flex justify-content-between align-items-center px-2">
+        <span class="fw-bold text-primary"><span id="selectedCount">0</span> selected</span>
+        <div class="d-flex gap-2">
+            <button class="btn btn-sm btn-danger" onclick="bulkDelete()"><i class="bi bi-trash"></i> Delete</button>
+            <button class="btn btn-sm btn-secondary" onclick="clearSelection()"><i class="bi bi-x"></i> Clear</button>
+        </div>
+    </div>
+</div>
+
+<!-- Members List -->
+<div class="d-flex justify-content-between align-items-center mb-2">
+    <div class="form-check">
+        <input class="form-check-input" type="checkbox" id="selectAll" onchange="toggleSelectAll()">
+        <label class="form-check-label text-muted" for="selectAll">Select All</label>
+    </div>
+    <div class="text-muted small">
+        Total: <span id="countTotal" class="fw-bold text-white">0</span> |
+        Active: <span id="countActive" class="fw-bold text-success">0</span> |
+        Paid: <span id="countPaid" class="fw-bold text-primary">0</span> |
+        Unpaid: <span id="countUnpaid" class="fw-bold text-danger">0</span>
+    </div>
+</div>
+
+<div id="members" class="row g-3">
+    <!-- Members will be rendered here -->
+    <div class="col-12 text-center py-5">
+        <div class="spinner-border text-primary" role="status"></div>
+        <p class="text-muted mt-2">Loading members...</p>
+    </div>
+</div>
+
+<!-- Add Member Modal -->
+<div class="modal fade" id="addMemberModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content glass-panel border-0">
+            <div class="modal-header border-bottom border-secondary">
+                <h5 class="modal-title">Add New Member</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="addForm">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label text-muted">Full Name</label>
+                            <input type="text" id="name" class="form-control form-control-dark" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label text-muted">Phone Number</label>
+                            <div class="input-group">
+                                <span class="input-group-text bg-transparent border-secondary text-muted">+{{ default_cc
+                                    }}</span>
+                                <input type="text" id="phone" class="form-control form-control-dark">
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label text-muted">Admission Date</label>
+                            <input type="date" id="admission_date" class="form-control form-control-dark" required
+                                onchange="handleAdmissionDateChange()">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label text-muted">Monthly Fee</label>
+                            <input type="number" id="monthly_fee" class="form-control form-control-dark"
+                                placeholder="{{ monthly_price }}">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label text-muted">Training Type</label>
+                            <select id="training_type" class="form-select form-control-dark">
+                                <option value="standard">Gym (Standard)</option>
+                                <option value="personal">Personal Training</option>
+                                <option value="cardio">Cardio</option>
+                                <option value="other">Custom</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6 d-none" id="customTrainingRow">
+                            <label class="form-label text-muted">Custom Training Name</label>
+                            <input type="text" id="custom_training" class="form-control form-control-dark">
+                        </div>
+                        <div class="col-12">
+                            <div class="form-check form-switch">
+                                <input class="form-check-input" type="checkbox" id="init_paid">
+                                <label class="form-check-label" for="init_paid">Mark admission month as Paid <span
+                                        id="paidMonthHint" class="text-muted small"></span></label>
+                            </div>
+                            <div class="form-check form-switch mt-2">
+                                <input class="form-check-input" type="checkbox" id="special_tag">
+                                <label class="form-check-label" for="special_tag">Mark as Special Member (VIP)</label>
+                            </div>
+                        </div>
+
+                        <div class="col-12 mt-4">
+                            <label class="form-label text-muted">Photo</label>
+                            <div class="d-flex gap-2 align-items-start">
+                                <input type="file" id="photo" class="form-control form-control-dark" accept="image/*">
+                                <button type="button" class="btn btn-outline-secondary" id="btnAddStartCam"
+                                    onclick="startAddCamera()">
+                                    <i class="bi bi-camera"></i>
+                                </button>
+                            </div>
+                            <div class="mt-2">
+                                <video id="addCamStream" class="d-none w-100 rounded border border-secondary" autoplay
+                                    muted style="max-height: 300px; object-fit: cover;"></video>
+                                <div class="d-flex gap-2 mt-2">
+                                    <button type="button" class="btn btn-primary d-none" id="btnAddCapture"
+                                        onclick="captureAddPhoto()">Capture</button>
+                                    <button type="button" class="btn btn-danger d-none" id="btnAddStopCam"
+                                        onclick="stopAddCamera()">Cancel</button>
+                                </div>
+                                <div id="addCaptureStatus" class="small mt-1"></div>
+                            </div>
+                        </div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer border-top border-secondary">
+                <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Close</button>
+                <button type="submit" form="addForm" class="btn btn-primary-glow">Add Member</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Member Modal -->
+<div class="modal fade" id="editMemberModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content glass-panel border-0">
+            <div class="modal-header border-bottom border-secondary">
+                <h5 class="modal-title">Edit Member</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="editMemberForm" class="vstack gap-3">
+                    <div>
+                        <label class="form-label text-muted">Name</label>
+                        <input class="form-control form-control-dark" id="edit_name" onblur="scheduleEditAutoSave()">
+                    </div>
+                    <div>
+                        <label class="form-label text-muted">Phone</label>
+                        <input class="form-control form-control-dark" id="edit_phone" onblur="scheduleEditAutoSave()">
+                    </div>
+                    <div>
+                        <label class="form-label text-muted">Admission Date</label>
+                        <input type="date" class="form-control form-control-dark" id="edit_admission"
+                            onchange="scheduleEditAutoSave()">
+                    </div>
+                    <div>
+                        <label class="form-label text-muted">Training Type</label>
+                        <select class="form-select form-control-dark" id="edit_training_type"
+                            onchange="toggleEditCustomTraining(); scheduleEditAutoSave();">
+                            <option value="standard">Gym</option>
+                            <option value="personal">Personal</option>
+                            <option value="cardio">Cardio</option>
+                            <option value="other">Custom</option>
+                        </select>
+                    </div>
+                    <div id="edit_custom_training_wrap" class="d-none">
+                        <label class="form-label text-muted">Custom Training</label>
+                        <input class="form-control form-control-dark" id="edit_custom_training"
+                            onblur="scheduleEditAutoSave()">
+                    </div>
+                    <div>
+                        <label class="form-label text-muted">Monthly Fee</label>
+                        <input type="number" class="form-control form-control-dark" id="edit_monthly_fee"
+                            onblur="scheduleEditAutoSave()">
+                    </div>
+                    <div class="form-check form-switch">
+                        <input class="form-check-input" type="checkbox" id="edit_special_tag"
+                            onchange="scheduleEditAutoSave()">
+                        <label class="form-check-label" for="edit_special_tag">Special Tag</label>
+                    </div>
+
+                    <div class="border-top border-secondary pt-3 mt-2">
+                        <label class="form-label text-muted">Update Photo</label>
+                        <input type="file" class="form-control form-control-dark mb-2" id="edit_photo" accept="image/*">
+
+                        <video id="editCamStream" autoplay class="w-100 rounded border border-secondary d-none"
+                            style="max-height: 250px;"></video>
+                        <canvas id="editCamCanvas" class="w-100 rounded border border-secondary d-none"
+                            style="max-height: 250px;"></canvas>
+
+                        <div class="d-flex gap-2 mt-2">
+                            <button type="button" class="btn btn-sm btn-outline-secondary" id="btnStartCam"
+                                onclick="startEditCamera()">
+                                <i class="bi bi-camera-video"></i> Camera
+                            </button>
+                            <button type="button" class="btn btn-sm btn-primary d-none" id="btnCaptureCam"
+                                onclick="captureEditPhoto()">Capture</button>
+                            <button type="button" class="btn btn-sm btn-danger d-none" id="btnStopCam"
+                                onclick="stopEditCamera()">Stop</button>
+                        </div>
+                        <div id="captureStatus" class="small mt-1"></div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer border-top border-secondary">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                <button type="button" class="btn btn-primary-glow" onclick="saveEdit()">Save Changes</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Member Details Modal -->
+<div class="modal fade" id="memberDetailsModal" tabindex="-1">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content glass-panel border-0">
+            <div class="modal-header border-bottom border-secondary">
+                <h5 class="modal-title">Member Details</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <ul class="nav nav-tabs border-bottom-0 mb-3" role="tablist">
+                    <li class="nav-item">
+                        <button
+                            class="nav-link active text-white bg-transparent border-0 border-bottom border-primary border-2"
+                            data-bs-toggle="tab" data-bs-target="#tab-payments">Payments</button>
+                    </li>
+                    <li class="nav-item">
+                        <button class="nav-link text-muted bg-transparent border-0" data-bs-toggle="tab"
+                            data-bs-target="#tab-transactions">Transactions</button>
+                    </li>
+                </ul>
+                <div class="tab-content">
+                    <div class="tab-pane fade show active" id="tab-payments"></div>
+                    <div class="tab-pane fade" id="tab-transactions"></div>
+                </div>
+            </div>
+            <div class="modal-footer border-top border-secondary">
+                <button type="button" class="btn btn-outline-info" onclick="downloadMemberCard()">
+                    <i class="bi bi-printer"></i> Download Card
+                </button>
+                <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+    // Debounce helper
+    let debounceTimer;
+    function debouncedFetchMembers() {
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(() => {
+            fetchMembers();
+        }, 300);
+    }
+
+    async function fetchMembers() {
+        const container = document.getElementById('members');
+        const q = document.getElementById('search').value.trim();
+        const status = document.getElementById('filterStatus').value;
+        const active = document.getElementById('filterActive').value;
+        const training = document.getElementById('filterTraining').value;
+
+        const params = new URLSearchParams();
+        if (q) params.set('search', q);
+        if (status) params.set('status', status);
+        if (active) params.set('active', active);
+        if (training) params.set('training_type', training);
+
+        try {
+            const res = await fetch('/api/members?' + params.toString());
+            if (!res.ok) throw new Error('API Error');
+            const list = await res.json();
+            renderMembers(list);
+        } catch (e) {
+            console.error(e);
+            container.innerHTML = '<div class="col-12 text-center text-danger">Failed to load members.</div>';
+        }
+    }
+
+    // Render function adapted for new UI
+    function renderMembers(list) {
+        window.allMembers = list;
+        const container = document.getElementById('members');
+
+        // Update counters
+        document.getElementById('countTotal').textContent = list.length;
+        document.getElementById('countActive').textContent = list.filter(m => m.is_active).length;
+        document.getElementById('countPaid').textContent = list.filter(m => m.current_fee_status === 'Paid').length;
+        document.getElementById('countUnpaid').textContent = list.filter(m => m.current_fee_status === 'Unpaid').length;
+
+        if (list.length === 0) {
+            container.innerHTML = '<div class="col-12 text-center text-muted py-5">No members found matching criteria.</div>';
+            return;
+        }
+
+        container.innerHTML = list.map(m => {
+            const isSelected = window.selectedMembers.has(m.id);
+            const statusClass = m.current_fee_status === 'Paid' ? 'text-success' : m.current_fee_status === 'Unpaid' ? 'text-danger' : 'text-muted';
+            const photoUrl = m.image_url || '/static/uploads/default-avatar.png';
+
+            return `
+            <div class="col-md-6 col-lg-4 col-xl-3">
+                <div class="glass-card h-100 position-relative ${isSelected ? 'border-primary' : ''}">
+                    <div class="position-absolute top-0 end-0 p-3">
+                        <input type="checkbox" class="form-check-input" ${isSelected ? 'checked' : ''} onchange="toggleMemberSelection(${m.id})">
+                    </div>
+                    
+                    <div class="text-center mb-3">
+                        <img src="${photoUrl}" class="rounded-circle object-fit-cover border border-2 border-secondary" width="80" height="80" onerror="this.src='/static/uploads/default-avatar.png'">
+                        <h5 class="fw-bold mt-2 mb-0">${m.name}</h5>
+                        <div class="small text-muted">${m.phone || 'No Phone'}</div>
+                        <div class="badge bg-secondary bg-opacity-25 text-white mt-2">${m.training_type}</div>
+                    </div>
+                    
+                    <div class="d-flex justify-content-between small mb-3 px-2">
+                        <span class="text-muted">Status:</span>
+                        <span class="fw-bold ${statusClass}">${m.current_fee_status}</span>
+                    </div>
+                    
+                    <div class="d-grid gap-2">
+                        <button class="btn btn-sm btn-outline-success" onclick="payThisMonth(${m.id})">
+                            <i class="bi bi-cash-coin"></i> Pay Now
+                        </button>
+                        <div class="d-flex gap-2">
+                            <button class="btn btn-sm btn-outline-primary flex-grow-1" onclick="openMemberDetails(${m.id})">Details</button>
+                            <button class="btn btn-sm btn-outline-secondary" onclick="openEditMember(${m.id})"><i class="bi bi-pencil"></i></button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            `;
+        }).join('');
+    }
+
+    // Initialize
+    window.selectedMembers = new Set();
+    window.allMembers = [];
+    document.addEventListener('DOMContentLoaded', () => {
+        debouncedFetchMembers();
+
+        // Add Form Handler
+        document.getElementById('addForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            await handleAddSubmit();
+        });
+    });
+
+    async function handleAddSubmit() {
+        const name = document.getElementById('name').value.trim();
+        const phone = document.getElementById('phone').value.trim();
+        const admission_date = document.getElementById('admission_date').value;
+        const training_type = document.getElementById('training_type').value;
+        const custom_training = document.getElementById('custom_training').value.trim();
+        const monthly_fee = parseFloat(document.getElementById('monthly_fee').value) || 0;
+        const special_tag = document.getElementById('special_tag').checked;
+        const init_paid = document.getElementById('init_paid').checked;
+        const photoFile = document.getElementById('photo').files[0];
+
+        const payload = {
+            name, phone, admission_date,
+            training_type: training_type === 'other' ? custom_training : training_type,
+            monthly_fee, special_tag, is_active: true
+        };
+
+        try {
+            const res = await fetch('/api/members', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            if (!res.ok) throw new Error('Failed');
+            const data = await res.json();
+
+            if (photoFile) {
+                const fd = new FormData();
+                fd.append('photo', photoFile);
+                await fetch(`/api/members/${data.id}/photo`, { method: 'POST', body: fd });
+            }
+
+            if (init_paid) {
+                const now = new Date();
+                const month = now.toISOString().slice(0, 7);
+                await fetch('/api/payment/pay-now', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ member_id: data.id, month })
+                });
+            }
+
+            bootstrap.Modal.getInstance(document.getElementById('addMemberModal')).hide();
+            document.getElementById('addForm').reset();
+            fetchMembers();
+            alert('Member added!');
+        } catch (e) {
+            alert('Error adding member');
+        }
+    }
+
+    async function openEditMember(id) {
+        window.currentEditMemberId = id;
+        const res = await fetch(`/api/members?search=${id}`);
+        const list = await res.json();
+        const m = list.find(x => x.id === id);
+        if (!m) return;
+
+        document.getElementById('edit_name').value = m.name;
+        document.getElementById('edit_phone').value = m.phone;
+        document.getElementById('edit_admission').value = m.admission_date;
+        document.getElementById('edit_monthly_fee').value = m.monthly_fee;
+        document.getElementById('edit_training_type').value = m.training_type;
+        document.getElementById('edit_special_tag').checked = m.special_tag;
+
+        new bootstrap.Modal(document.getElementById('editMemberModal')).show();
+    }
+
+    async function saveEdit() {
+        const id = window.currentEditMemberId;
+        const data = {
+            name: document.getElementById('edit_name').value,
+            phone: document.getElementById('edit_phone').value,
+            admission_date: document.getElementById('edit_admission').value,
+            monthly_price: document.getElementById('edit_monthly_fee').value,
+            training_type: document.getElementById('edit_training_type').value,
+            special_tag: document.getElementById('edit_special_tag').checked,
+        };
+        await fetch(`/api/members/${id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data)
+        });
+        bootstrap.Modal.getInstance(document.getElementById('editMemberModal')).hide();
+        fetchMembers();
+    }
+
+    async function payThisMonth(id) {
+        const now = new Date();
+        const month = now.toISOString().slice(0, 7);
+        await fetch('/api/payment/pay-now', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ member_id: id, month })
+        });
+        fetchMembers();
+        alert('Paid!');
+    }
+
+    function toggleSelectAll() {
+        const checked = document.getElementById('selectAll').checked;
+        window.selectedMembers.clear();
+        if (checked) window.allMembers.forEach(m => window.selectedMembers.add(m.id));
+        renderMembers(window.allMembers);
+        updateBulkToolbar();
+    }
+
+    function toggleMemberSelection(id) {
+        if (window.selectedMembers.has(id)) window.selectedMembers.delete(id);
+        else window.selectedMembers.add(id);
+        updateBulkToolbar();
+    }
+
+    function updateBulkToolbar() {
+        const count = window.selectedMembers.size;
+        document.getElementById('selectedCount').textContent = count;
+        document.getElementById('bulkToolbar').classList.toggle('d-none', count === 0);
+    }
+
+    async function bulkDelete() {
+        if (!confirm('Delete selected?')) return;
+        for (let id of window.selectedMembers) {
+            await fetch(`/api/members/${id}`, { method: 'DELETE' });
+        }
+        window.selectedMembers.clear();
+        updateBulkToolbar();
+        fetchMembers();
+    }
+
+    function clearSelection() {
+        window.selectedMembers.clear();
+        updateBulkToolbar();
+        renderMembers(window.allMembers);
+    }
+
+    // Member Details
+    async function openMemberDetails(id) {
+        window.currentDetailId = id;
+        const modal = new bootstrap.Modal(document.getElementById('memberDetailsModal'));
+        modal.show();
+
+        const res = await fetch(`/api/member/${id}/payment-history`);
+        const data = await res.json();
+
+        if (!data.member) return;
+
+        // Render Payments
+        const paymentsHtml = `
+            <table class="table table-dark-custom">
+                <thead><tr><th>Month</th><th>Status</th><th>Amount</th><th>Date</th></tr></thead>
+                <tbody>
+                    ${data.payments.map(p => `
+                        <tr>
+                            <td>${p.month}/${p.year}</td>
+                            <td><span class="badge ${p.status === 'Paid' ? 'bg-success' : 'bg-danger'}">${p.status}</span></td>
+                            <td>${p.amount || '-'}</td>
+                            <td>${p.paid_date || '-'}</td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        `;
+        document.getElementById('tab-payments').innerHTML = paymentsHtml;
+    }
+
+    function downloadMemberCard() {
+        if (!window.currentDetailId) return;
+        window.location.href = `/api/members/${window.currentDetailId}/card`;
+    }
+
+    // Camera Logic
+    let stream = null;
+
+    async function startCamera(videoElement) {
+        try {
+            stream = await navigator.mediaDevices.getUserMedia({ video: true });
+            videoElement.srcObject = stream;
+            videoElement.classList.remove('d-none');
+            return true;
+        } catch (e) {
+            alert('Camera access denied');
+            return false;
+        }
+    }
+
+    function stopCamera(videoElement) {
+        if (stream) {
+            stream.getTracks().forEach(track => track.stop());
+            stream = null;
+        }
+        videoElement.classList.add('d-none');
+    }
+
+    function capturePhoto(videoElement) {
+        const canvas = document.createElement('canvas');
+        canvas.width = videoElement.videoWidth;
+        canvas.height = videoElement.videoHeight;
+        canvas.getContext('2d').drawImage(videoElement, 0, 0);
+        return new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg'));
+    }
+
+    // Add Member Camera
+    async function startAddCamera() {
+        const video = document.getElementById('addCamStream');
+        if (await startCamera(video)) {
+            document.getElementById('btnAddCapture').classList.remove('d-none');
+            document.getElementById('btnAddStopCam').classList.remove('d-none');
+            document.getElementById('btnAddStartCam').classList.add('d-none');
+        }
+    }
+
+    function stopAddCamera() {
+        stopCamera(document.getElementById('addCamStream'));
+        document.getElementById('btnAddCapture').classList.add('d-none');
+        document.getElementById('btnAddStopCam').classList.add('d-none');
+        document.getElementById('btnAddStartCam').classList.remove('d-none');
+    }
+
+    async function captureAddPhoto() {
+        const blob = await capturePhoto(document.getElementById('addCamStream'));
+        const file = new File([blob], "capture.jpg", { type: "image/jpeg" });
+
+        // Create a DataTransfer to set the file input
+        const dt = new DataTransfer();
+        dt.items.add(file);
+        document.getElementById('photo').files = dt.files;
+
+        document.getElementById('addCaptureStatus').textContent = 'Photo captured!';
+        stopAddCamera();
+    }
+
+    // Edit Member Camera
+    async function startEditCamera() {
+        const video = document.getElementById('editCamStream');
+        if (await startCamera(video)) {
+            document.getElementById('btnCaptureCam').classList.remove('d-none');
+            document.getElementById('btnStopCam').classList.remove('d-none');
+            document.getElementById('btnStartCam').classList.add('d-none');
+        }
+    }
+
+    function stopEditCamera() {
+        stopCamera(document.getElementById('editCamStream'));
+        document.getElementById('btnCaptureCam').classList.add('d-none');
+        document.getElementById('btnStopCam').classList.add('d-none');
+        document.getElementById('btnStartCam').classList.remove('d-none');
+    }
+
+    async function captureEditPhoto() {
+        const blob = await capturePhoto(document.getElementById('editCamStream'));
+        const file = new File([blob], "capture.jpg", { type: "image/jpeg" });
+
+        // Upload immediately for edit
+        const fd = new FormData();
+        fd.append('photo', file);
+
+        const res = await fetch(`/api/members/${window.currentEditMemberId}/photo`, {
+            method: 'POST',
+            body: fd
+        });
+
+        if (res.ok) {
+            document.getElementById('captureStatus').textContent = 'Photo updated!';
+            stopEditCamera();
+        } else {
+            alert('Failed to upload photo');
+        }
+    }
+</script>
+{% endblock %}
