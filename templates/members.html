@@ -5,9 +5,51 @@
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
     <h2 class="fw-bold mb-0">Members</h2>
-    <button class="btn btn-primary-glow" data-bs-toggle="modal" data-bs-target="#addMemberModal">
-        <i class="bi bi-person-plus-fill me-2"></i> Add Member
-    </button>
+    <div class="d-flex gap-2">
+        <button class="btn btn-primary-glow" data-bs-toggle="modal" data-bs-target="#addMemberModal">
+            <i class="bi bi-person-plus-fill me-2"></i> Add Member
+        </button>
+    </div>
+</div>
+
+<!-- AI Upload Section -->
+<div class="glass-panel p-3 mb-4 border border-primary border-opacity-25">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h5 class="fw-bold mb-0 text-white"><i class="bi bi-robot fs-4 me-2 text-info"></i>AI Data Import</h5>
+        <button class="btn btn-sm btn-outline-info" type="button" data-bs-toggle="collapse"
+            data-bs-target="#uploadHelp">
+            <i class="bi bi-info-circle me-1"></i> Supported Columns
+        </button>
+    </div>
+
+    <div class="collapse mb-3" id="uploadHelp">
+        <div class="card card-body bg-dark bg-opacity-50 text-small text-muted border-secondary">
+            <p class="mb-2"><strong>Supported Fields (English & Urdu):</strong></p>
+            <ul class="row list-unstyled mb-0">
+                <li class="col-md-4">Name (نام)</li>
+                <li class="col-md-4">Phone (رابطہ)</li>
+                <li class="col-md-4">Emission Date (داخلہ)</li>
+                <li class="col-md-4">Plan Type (پلان)</li>
+                <li class="col-md-4">Access Tier (رسائی)</li>
+                <li class="col-md-4">Training (تربیت)</li>
+                <li class="col-md-4">Monthly Fee (فیس)</li>
+                <li class="col-md-4">Address (پتہ)</li>
+            </ul>
+        </div>
+    </div>
+
+    <div class="row align-items-end g-3">
+        <div class="col-md-8">
+            <label class="form-label text-muted small">Upload CSV or Excel file</label>
+            <input class="form-control form-control-dark" type="file" id="memberUploadFile" accept=".csv, .xlsx, .xls">
+        </div>
+        <div class="col-md-4">
+            <button class="btn btn-primary-glow w-100" onclick="uploadMembers()">
+                <i class="bi bi-cloud-upload me-2"></i> Import with AI
+            </button>
+        </div>
+    </div>
+    <div id="uploadStatus" class="mt-2"></div>
 </div>
 
 <!-- Filters -->
@@ -394,6 +436,59 @@
         });
     });
 
+    async function uploadMembers() {
+        const fileInput = document.getElementById('memberUploadFile');
+        const file = fileInput.files[0];
+        if (!file) return alert("Please select a file first.");
+
+        const statusDiv = document.getElementById('uploadStatus');
+        statusDiv.innerHTML = '<div class="text-info"><span class="spinner-border spinner-border-sm me-2"></span>AI is analyzing your file...</div>';
+
+        const formData = new FormData();
+        formData.append('file', file);
+
+        try {
+            const res = await fetch('/api/members/upload', {
+                method: 'POST',
+                body: formData
+            });
+            const data = await res.json();
+
+            if (res.ok && data.ok) {
+                statusDiv.innerHTML = '';
+                fileInput.value = ''; // Reset
+
+                // Populate Modal
+                document.getElementById('aiQualityScore').textContent = data.ai_detection.detection_quality + '%';
+                document.getElementById('aiStatsCreated').textContent = data.created;
+                document.getElementById('aiStatsUpdated').textContent = data.updated;
+                document.getElementById('aiStatsSkipped').textContent = data.skipped;
+
+                // Mapped list
+                const mappedList = document.getElementById('aiMappedList');
+                mappedList.innerHTML = '';
+                Object.entries(data.ai_detection.columns_detected).forEach(([field, colName]) => {
+                    mappedList.innerHTML += `<li><span class="text-white">${field}</span> ← "${colName}"</li>`;
+                });
+
+                // Unmapped
+                if (data.ai_detection.unmapped_columns.length > 0) {
+                    document.getElementById('aiUnmappedSection').classList.remove('d-none');
+                    document.getElementById('aiUnmappedList').textContent = data.ai_detection.unmapped_columns.join(', ');
+                } else {
+                    document.getElementById('aiUnmappedSection').classList.add('d-none');
+                }
+
+                new bootstrap.Modal(document.getElementById('importResultModal')).show();
+                fetchMembers();
+            } else {
+                statusDiv.innerHTML = `<div class="text-danger"><i class="bi bi-exclamation-triangle me-1"></i> ${data.error}</div>`;
+            }
+        } catch (e) {
+            statusDiv.innerHTML = `<div class="text-danger">Upload failed: ${e.message}</div>`;
+        }
+    }
+
     async function handleAddSubmit() {
         const name = document.getElementById('name').value.trim();
         const phone = document.getElementById('phone').value.trim();
@@ -663,4 +758,54 @@
         }
     }
 </script>
+
+<!-- AI Import Result Modal -->
+<div class="modal fade" id="importResultModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content glass-panel border-0">
+            <div class="modal-header border-bottom border-secondary">
+                <h5 class="modal-title">
+                    <i class="bi bi-robot text-info me-2"></i>AI Import Analysis
+                </h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="text-center mb-4">
+                    <h2 id="aiQualityScore" class="display-4 fw-bold text-success mb-0">0%</h2>
+                    <p class="text-muted small">Detection Quality</p>
+                </div>
+
+                <div class="row text-center mb-4">
+                    <div class="col-4 border-end border-secondary">
+                        <h4 id="aiStatsCreated" class="fw-bold mb-0">0</h4>
+                        <div class="small text-muted">Created</div>
+                    </div>
+                    <div class="col-4 border-end border-secondary">
+                        <h4 id="aiStatsUpdated" class="fw-bold mb-0">0</h4>
+                        <div class="small text-muted">Updated</div>
+                    </div>
+                    <div class="col-4">
+                        <h4 id="aiStatsSkipped" class="fw-bold mb-0">0</h4>
+                        <div class="small text-muted">Skipped</div>
+                    </div>
+                </div>
+
+                <div class="bg-dark bg-opacity-50 p-3 rounded mb-3">
+                    <h6 class="text-info mb-2"><i class="bi bi-check-circle me-1"></i> Mapped Columns</h6>
+                    <ul id="aiMappedList" class="list-unstyled small mb-0 font-monospace text-muted"></ul>
+                </div>
+
+                <div id="aiUnmappedSection" class="d-none">
+                    <h6 class="text-warning mb-2"><i class="bi bi-exclamation-triangle me-1"></i> Unmapped (Ignored)
+                    </h6>
+                    <p id="aiUnmappedList" class="small text-muted mb-0"></p>
+                </div>
+            </div>
+            <div class="modal-footer border-top border-secondary">
+                <button type="button" class="btn btn-primary-glow" data-bs-dismiss="modal">Done</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 {% endblock %}
