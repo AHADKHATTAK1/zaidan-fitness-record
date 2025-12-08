@@ -1770,20 +1770,20 @@ def member_payment_history(member_id):
             'name': member.name,
             'phone': member.phone,
             'email': member.email,
-            'cnic': member.cnic,
-            'address': member.address,
-            'gender': member.gender,
-            'date_of_birth': member.date_of_birth.strftime('%Y-%m-%d') if member.date_of_birth else None,
+            'cnic': getattr(member, 'cnic', None),
+            'address': getattr(member, 'address', None),
+            'gender': getattr(member, 'gender', None),
+            'date_of_birth': member.date_of_birth.strftime('%Y-%m-%d') if hasattr(member, 'date_of_birth') and member.date_of_birth else None,
             'admission_date': member.admission_date.strftime('%Y-%m-%d') if member.admission_date else None,
-            'monthly_price': float(member.monthly_price) if member.monthly_price else 0,
+            'monthly_price': float(getattr(member, 'monthly_price', 0) or 0),
             'referred_by': member.referred_by,
             'is_active': member.is_active,
-            'notes': member.notes
+            'notes': getattr(member, 'notes', None)
         },
         'last_paid_month': last_paid,
         'months_unpaid': months_unpaid,
         'payments': payment_list,
-        'currency': member.currency or 'PKR'
+        'currency': getattr(member, 'currency', None) or 'PKR'
     })
 
 @app.route('/api/payment/pay-now', methods=['POST'])
