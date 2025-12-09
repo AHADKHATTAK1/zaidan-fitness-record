@@ -21,25 +21,9 @@ def create_app():
     @app.route('/')
     def home():
         if 'user_id' in session:
-            return redirect(url_for('dashboard'))
+            return redirect(url_for('dashboard.dashboard'))
         return redirect(url_for('auth.login'))
 
-    @app.route('/dashboard')
-    def dashboard():
-        if 'user_id' not in session:
-            return redirect(url_for('auth.login'))
-            
-        # Basic stats
-        total_members = Member.query.count()
-        # ... (Add other stats logic here or move to a dashboard blueprint)
-        
-        return render_template('dashboard.html', 
-                               total_members=total_members,
-                               paid_count=0, # Placeholder
-                               unpaid_count=0, # Placeholder
-                               recent_activity=[], # Placeholder
-                               gym_name="Zaidan Fitness")
-                               
     return app
 
 if __name__ == '__main__':

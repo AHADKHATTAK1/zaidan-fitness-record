@@ -4,6 +4,7 @@ from blueprints.members import members_bp
 from blueprints.inventory import inventory_bp
 from blueprints.pos import pos_bp
 from blueprints.settings import settings_bp
+from blueprints.dashboard import dashboard_bp
 
 def register_blueprints(app):
     app.register_blueprint(auth_bp)
@@ -11,3 +12,4 @@ def register_blueprints(app):
     app.register_blueprint(inventory_bp)
     app.register_blueprint(pos_bp)
     app.register_blueprint(settings_bp)
+    app.register_blueprint(dashboard_bp)
