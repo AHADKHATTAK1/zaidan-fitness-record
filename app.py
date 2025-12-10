@@ -19,16 +19,26 @@ def create_app():
     if db_url and db_url.startswith("postgres://"):
         db_url = db_url.replace("postgres://", "postgresql://", 1)
     
-    app.config['SQLALCHEMY_DATABASE_URI'] = db_url or 'sqlite:///gym.db'
+    if not db_url:
+        # Fallback to absolute path SQLite
+        basedir = os.path.abspath(os.path.dirname(__file__))
+        db_path = os.path.join(basedir, 'gym.db')
+        db_url = 'sqlite:///' + db_path
+
+    print(f"--> Using Database: {db_url}") # Debug log
+    app.config['SQLALCHEMY_DATABASE_URI'] = db_url
     
     # Initialize extensions
     db.init_app(app)
     migrate.init_app(app, db)
     oauth.init_app(app)
     
-    # Ensure tables exist (Simpler than running migrations manually for this setup)
+    # Ensure tables exist (Import models first!)
     with app.app_context():
+        # Explicitly import models to ensure valid registration before create_all
+        import models 
         db.create_all()
+        print("--> Tables created successfully.")
     
     # Register blueprints
     register_blueprints(app)
