@@ -29,18 +29,13 @@ def dashboard():
     unpaid_count = Payment.query.filter_by(year=now.year, month=now.month, status='Unpaid').count()
     
     # 3. Revenue Stats (Current Month)
-    # Membership Revenue
-    # Assuming we track actual transaction amounts in PaymentTransaction or estimate from Member.monthly_fee
-    # For now, let's use PaymentTransaction if available, or just count metrics
-    
-    # Sales Revenue
-    sales_revenue = db.session.query(func.sum(Sale.total_amount)).filter(
+    sales_revenue = db.session.query(func.sum(Sale.total)).filter(
         func.strftime('%Y-%m', Sale.created_at) == now.strftime('%Y-%m')
-    ).scalar() or 0
-    
+    ).scalar() or 0.0
+
     # 4. Recent Activity
     recent_activity = AuditLog.query.order_by(AuditLog.created_at.desc()).limit(10).all()
-    
+
     # 5. Settings
     gym_name_setting = Setting.query.filter_by(key='gym_name').first()
     gym_name = gym_name_setting.value if gym_name_setting else 'Zaidan Fitness'
