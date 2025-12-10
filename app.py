@@ -13,12 +13,22 @@ load_dotenv()
 def create_app():
     app = Flask(__name__)
     app.config['SECRET_KEY'] = os.getenv('SECRET_KEY', 'dev_key')
-    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///gym.db'
+    
+    # Database Configuration
+    db_url = os.getenv('DATABASE_URL')
+    if db_url and db_url.startswith("postgres://"):
+        db_url = db_url.replace("postgres://", "postgresql://", 1)
+    
+    app.config['SQLALCHEMY_DATABASE_URI'] = db_url or 'sqlite:///gym.db'
     
     # Initialize extensions
     db.init_app(app)
     migrate.init_app(app, db)
     oauth.init_app(app)
+    
+    # Ensure tables exist (Simpler than running migrations manually for this setup)
+    with app.app_context():
+        db.create_all()
     
     # Register blueprints
     register_blueprints(app)
